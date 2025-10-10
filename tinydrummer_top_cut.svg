@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Fritzing (https://fritzing.org/) -->
+
+<svg
+   height="2.5329387in"
+   version="1.2"
+   viewBox="0 0 247.63348 182.37163"
+   width="3.4393516in"
+   x="0in"
+   y="0in"
+   id="svg4865"
+   sodipodi:docname="tinydrummer_top_cut.svg"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs4869" />
+  <sodipodi:namedview
+     id="namedview4867"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="in"
+     showgrid="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     showguides="true"
+     inkscape:guide-bbox="true"
+     inkscape:zoom="2.2132624"
+     inkscape:cx="142.09792"
+     inkscape:cy="80.650173"
+     inkscape:window-width="1680"
+     inkscape:window-height="1050"
+     inkscape:window-x="1920"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer7" />
+  <g
+     inkscape:groupmode="layer"
+     id="layer7"
+     inkscape:label="board"
+     transform="translate(0.16612187,-0.23597452)">
+    <path
+       id="boardoutline"
+       style="display:inline;fill:#cccccc;stroke-width:2.80986"
+       d="m 9.5531208,0.23597452 c -5.3841735,0 -9.71924267,4.64471918 -9.71924267,10.41357948 V 172.19406 c 0,5.76886 4.33506917,10.41358 9.71924267,10.41358 H 237.74805 c 5.38417,0 9.71924,-4.64472 9.71924,-10.41358 V 10.649554 c 0,-5.7688603 -4.33507,-10.41357948 -9.71924,-10.41357948 z M 7.7015574,3.4015034 A 4.53543,4.53543 0 0 1 12.236716,7.9366617 4.53543,4.53543 0 0 1 7.7015574,12.47182 4.53543,4.53543 0 0 1 3.1663993,7.9366617 4.53543,4.53543 0 0 1 7.7015574,3.4015034 Z M 237.38038,4.7711329 a 4.53543,4.53543 0 0 1 4.53516,4.5351585 4.53543,4.53543 0 0 1 -4.53516,4.5351586 4.53543,4.53543 0 0 1 -4.53662,-4.5351586 4.53543,4.53543 0 0 1 4.53662,-4.5351585 z M 18.758204,32.642728 H 98.778261 V 57.877604 H 18.758204 Z M 237.73926,111.52314 a 4.53543,4.53543 0 0 1 4.53663,4.53516 4.53543,4.53543 0 0 1 -4.53663,4.53662 4.53543,4.53543 0 0 1 -4.53515,-4.53662 4.53543,4.53543 0 0 1 4.53515,-4.53516 z m -199.07089,28.0254 a 8.7874055,8.7874055 0 0 1 8.787601,8.78761 8.7874055,8.7874055 0 0 1 -8.787601,8.78759 8.7874055,8.7874055 0 0 1 -8.787602,-8.78759 8.7874055,8.7874055 0 0 1 8.787602,-8.78761 z m 93.72074,0.007 a 8.7874055,8.7874055 0 0 1 8.78761,8.7876 8.7874055,8.7874055 0 0 1 -8.78761,8.7876 8.7874055,8.7874055 0 0 1 -8.78759,-8.7876 8.7874055,8.7874055 0 0 1 8.78759,-8.7876 z m -46.467791,0.0718 a 8.7874055,8.7874055 0 0 1 8.787605,8.7876 8.7874055,8.7874055 0 0 1 -8.787605,8.7876 8.7874055,8.7874055 0 0 1 -8.787596,-8.7876 8.7874055,8.7874055 0 0 1 8.787596,-8.7876 z m 108.963921,0.7207 a 8.7874055,8.7874055 0 0 1 8.78761,8.7876 8.7874055,8.7874055 0 0 1 -8.78761,8.7876 8.7874055,8.7874055 0 0 1 -8.7876,-8.7876 8.7874055,8.7874055 0 0 1 8.7876,-8.7876 z m 42.92287,28.3506 a 4.53543,4.53543 0 0 1 4.53516,4.53516 4.53543,4.53543 0 0 1 -4.53516,4.53662 4.53543,4.53543 0 0 1 -4.53516,-4.53662 4.53543,4.53543 0 0 1 4.53516,-4.53516 z m -228.5626063,1.0244 a 4.53543,4.53543 0 0 1 4.5351583,4.53663 4.53543,4.53543 0 0 1 -4.5351583,4.53515 4.53543,4.53543 0 0 1 -4.5351584,-4.53515 4.53543,4.53543 0 0 1 4.5351584,-4.53663 z" />
+    <g
+       inkscape:groupmode="layer"
+       id="layer8"
+       inkscape:label="boardoutline"
+       style="display:inline" />
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer5"
+     inkscape:label="silkscreen"
+     transform="translate(0.16612187,-0.23597452)" />
+  <g
+     inkscape:groupmode="layer"
+     id="layer6"
+     inkscape:label="silkscreen0"
+     transform="translate(0.16612187,-0.23597452)" />
+</svg>
