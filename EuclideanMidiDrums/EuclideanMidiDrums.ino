@@ -17,15 +17,28 @@
   with MIDI access provided over the SPI bus.
 
 */
-
+using namespace std;
 #include <SPI.h>
 #include <Wire.h>
 #include <MIDI.h>
-#include <Adafruit_SSD1306.h>
+
 #include <EncoderButton.h>
-#include "font.h"
+//#include "font.h"
 #include "vs10xx_uc.h" // From VLSI website: http://www.vlsi.fi/en/support/software/microcontrollersoftware.html
 
+#include <ss_oled.h>
+
+SSOLED ssoled;
+#define SDA_PIN A4
+#define SCL_PIN A5
+// no reset pin needed
+#define RESET_PIN -1
+// let ss_oled find the address of our display
+#define OLED_ADDR -1
+#define FLIP180 1
+#define INVERT 0
+// Use the default Wire library
+#define USE_HW_I2C 1
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -36,8 +49,6 @@
 
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 bool debug = true;
 
@@ -250,101 +261,108 @@ void onEb1Encoder(EncoderButton& eb) {
   }
 
 }
-
-//
-// --- display details
-//
-typedef struct {
-  int x;
-  int y;
-  const char* str;
-} pos_t;
-//// {x,y} locations of play screen items
-const int step_text_pos[] = { 0, 15, 16, 15, 32, 15, 48, 15, 64, 15, 80, 15, 96, 15, 112, 15 };
-const pos_t bpm_text_pos    = {.x = 0,  .y = 5, .str = "bpm:%3d" };
-const pos_t trans_text_pos  = {.x = 0, .y = 15, .str = "trs:%+2d" };
-const pos_t seqno_text_pos  = {.x = 0, .y = 28, .str = "seq:%d" };
-const pos_t seq_info_pos    = {.x = 60, .y = 45, .str = "" };
-const pos_t play_text_pos   = {.x = 110, .y = 57, .str = "" };
-
-const pos_t oct_text_offset = { .x = 3, .y = 10,  .str = "" };
-const pos_t gate_bar_offset = { .x = 0, .y = -15, .str = "" };
-const pos_t edit_text_offset = { .x = 3, .y = 22,  .str = "" };
-const int gate_bar_width = 14;
-const int gate_bar_height = 4;
+// Globals, clean up!
+uint8_t steps, fills, lastSteps, lastFills, repeats ;
+uint8_t currentRepeat = 0;
+bool bState1, bState2;
+bool swing = 0;
+uint8_t clkCounter = 0;
+uint8_t instrs;
+uint8_t timings;
+int loopstate;
 
 
+// time keeping global variables much from drum kid
+float nextPulseTime = 0.0; // the time, in milliseconds, of the next pulse
+float msPerPulse = 20.8333; // time for one "pulse" (there are 24 pulses per quarter note, as defined in MIDI spec)
+byte pulseNum = 0; // 0 to 23 (24ppqn, pulses per quarter note)
+unsigned int stepNum = 0; // 0 to 192 (max two bars of 8 beats, aka 192 pulses)
+unsigned int numSteps = 32; // number of steps used - dependent on time signature
+bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE THIS LATER)
+
+
+// util int to char array
+void int_to_char(int num, char *result) {
+    int temp = num;
+    int len = 0;
+
+    while (temp > 0) {
+        len++;
+        temp /= 10;
+    }
+
+    for (int i = len - 1; i >= 0; i--) {
+        result[i] = num % 10 + '0';
+        num /= 10;
+    }
+
+    result[len] = '\0';
+}
 // general display update
 void displayUpdate() {
-  display.clearDisplay();
-  display.setFont(&myfont);
-  display.setTextColor(WHITE, 0);
+      int i, x, y;
+    oledFill(&ssoled, 0, 1);
+    //oledWriteString(&ssoled, 0, 16, 0,(char *)"ss_oled Demo", FONT_NORMAL, 0, 1);
+    //oledWriteString(&ssoled, 0, 0, 1,(char *)"Written by Larry Bank", FONT_SMALL, 1, 1);
+    oledWriteString(&ssoled, 0, 0, 0,(char *)"BPM ", FONT_STRETCHED, 0, 1);
+   
+    char result[100];
+    int_to_char(tempo, result);
+    
+    oledWriteString(&ssoled, 0, 64, 0,result, FONT_STRETCHED, 0, 1);
+    oledWriteString(&ssoled, 0, 0, 3,(char *)"K 7", FONT_STRETCHED, 0, 1);
+    oledWriteString(&ssoled, 0, 0, 6,(char *)"F 16 R 12", FONT_STRETCHED, 0, 1);
 
-  // bpm
-  display.setCursor(bpm_text_pos.x, bpm_text_pos.y);
-  display.print("BPM: ");
-  display.print(tempo);
-
-  // transpose
-  display.setCursor(trans_text_pos.x, trans_text_pos.y);
-  display.print("FILLS: ");
-  display.print(numberOfFills);
-
-  // seqno
-  display.setCursor(seqno_text_pos.x, seqno_text_pos.y);
-  display.print("KIT: ");
-  display.print(kit);  // user sees 1-8
-
-  // seq info / meta
-  //display.setCursor(seq_info_pos.x, seq_info_pos.y);
-  //display.print(seq_info);
-
-  // play/pause
-  //display.setCursor(play_text_pos.x, play_text_pos.y);
-  //display.print(seqr.playing ? " >" : "[]");
-
-  display.display();
 }
 
-bool haveDisplay = true;
 
-void displaySetup() {
-  delay(2000);
-  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    //for(;;); // Don't proceed, loop forever
-    haveDisplay = false;
-  }
-#ifdef PANEL_USD
-  display.setRotation(2);  // 180 degree rotation for upside-down use
-#else
-  display.setRotation(2);  // Normal orientation
-#endif
-  display.clearDisplay();
-  display.setTextSize(0);
-  display.setTextColor(WHITE);
-  //analogReference(DEFAULT);
+bool haveDisplay = false;
 
-  display.drawPixel(10, 10, SSD1306_WHITE);
-  // Show the display buffer on the screen. You MUST call display() after
-  // drawing commands to make them visible on screen!
-  display.display();
-  delay(500);
+// setup function, oled
 
+void displaySetup(){
+      int rc;
+    rc = oledInit(&ssoled, OLED_128x64, OLED_ADDR, FLIP180, INVERT, USE_HW_I2C, SDA_PIN, SCL_PIN, RESET_PIN, 400000L);       // Standard HW I2C bus at 400Khz
+
+    if (rc != OLED_NOT_FOUND)
+    {
+        char *msgs[] =
+        {
+          (char *)"SSD1306 @ 0x3C",
+          (char *)"SSD1306 @ 0x3D",
+          (char *)"SH1106 @ 0x3C",
+          (char *)"SH1106 @ 0x3D"
+        };
+
+        oledFill(&ssoled, 0, 1);
+        oledWriteString(&ssoled, 0, 0, 0, (char *)"TrEbUcHeT", FONT_STRETCHED, 0, 1);
+        oledWriteString(&ssoled, 0, 10, 2, msgs[rc], FONT_NORMAL, 0, 1);
+
+        haveDisplay = true;
+        delay(1000);
+    }
 }
 
 void setup() {
-  
+
   Serial.begin(57600);
+
   displaySetup();
   
-
   //Link the event(s) to your function
   eb1.setClickHandler(onEb1Clicked);
   eb1.setEncoderHandler(onEb1Encoder);
   // put your setup code here, to run once:
   initialiseVS10xx();
+
+  repeats = map(analogRead(POT_KIT), 0, 1023, 0, 31);
+  numberOfFills = map(analogRead(POT_FILLS), 0, 1023, 1, 16);
+  tempo =  map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
+
+
+
+
+
 
 
 
@@ -442,24 +460,6 @@ void setup() {
   */
 }
 
-// Globals, clean up!
-uint8_t steps, fills, lastSteps, lastFills, repeats ;
-uint8_t currentRepeat = 0;
-bool bState1, bState2;
-bool swing = 0;
-uint8_t clkCounter = 0;
-uint8_t instrs;
-uint8_t timings;
-int loopstate;
-
-
-// time keeping global variables much from drum kid
-float nextPulseTime = 0.0; // the time, in milliseconds, of the next pulse
-float msPerPulse = 20.8333; // time for one "pulse" (there are 24 pulses per quarter note, as defined in MIDI spec)
-byte pulseNum = 0; // 0 to 23 (24ppqn, pulses per quarter note)
-unsigned int stepNum = 0; // 0 to 192 (max two bars of 8 beats, aka 192 pulses)
-unsigned int numSteps = 32; // number of steps used - dependent on time signature
-bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE THIS LATER)
 
 /*
   storedValues[BEAT] = 27;
@@ -562,7 +562,7 @@ void loop() {
       int note = kits[kit][rr];
       //Serial.println ( note);
       // we're addding a bit of randomness to velocity
-      int vel = 127 - random(20);
+      int vel = 127 - random(50);
       if (note == 75 || note == 57) {
         vel = 90 ;
       }
@@ -646,7 +646,7 @@ void loop() {
         Serial.print ("Tempo: ");
         Serial.println ( tempo);
       }
-     if (haveDisplay) displayUpdate();
+      if (haveDisplay) displayUpdate();
 
     }
 #endif // POT_TEMPO
@@ -664,7 +664,7 @@ void loop() {
         Serial.print ("Repeats: ");
         Serial.println ( repeats);
       }
-      if (haveDisplay) displayUpdate();
+      if (haveDisplay) {displayUpdate();
     }
 #endif // POT_REPEATS
 
