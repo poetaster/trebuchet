@@ -19,6 +19,7 @@
 */
 
 #include <SPI.h>
+#include <Wire.h>
 #include <MIDI.h>
 #include <Adafruit_SSD1306.h>
 #include <EncoderButton.h>
@@ -30,7 +31,7 @@
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library. 
+// The pins for I2C are defined by the Wire-library.
 // On an arduino UNO:       A4(SDA), A5(SCL)
 
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
@@ -38,12 +39,12 @@
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-
+bool debug = true;
 
 // init encoder, sda and scl are on 3, 4 (2 to ground).
 // this lib does accel and counts multiple clicks.
 
-EncoderButton eb1(3,2,4);
+EncoderButton eb1(4, 3, 2);
 
 // font for display
 #define myfont Org_01  // sigh
@@ -114,7 +115,7 @@ uint16_t MIDI_CHANNEL_FILTER = 0b1111111111111111;
 // POTs to control which set of drums and tempo
 #define POT_TEMPO   A0
 #define POT_FILLS   A1
-#define POT_KIT     A2
+#define POT_KIT     A2 // used for repeats.
 //#define POT_REPEATS A3
 
 // modulation pins analog
@@ -189,7 +190,7 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 // Defaults, but will be overridden by POT settings if enabled
 uint16_t volume = 0;
-uint16_t tempo  = 120;
+uint16_t tempo  = 60;
 byte instrument;
 
 
@@ -214,7 +215,7 @@ char teststr[32];
 #define VS1003_D_CLAVES   75   // 28 31 32 33 37 56 67 68 75 76 77 83 84 85
 
 int kits[KIT][13] = {
-  { 42, 36, 46, 42, 37, 36, 42, 46, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
+  { 42, 36, 38, 42, 38, 36, 42, 55, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
   { 35, 40, 42, 46, 35, 40, 42, 46, 42, 38, 64, 37, 42 }, // not bad
   { 36, 40, 36, 42, 42, 40, 40, 70, 46, 36, 75, 70, 37 }, // not bad
   { 35, 38, 42, 40, 35, 42, 70, 42, 46, 70, 46, 35, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
@@ -228,37 +229,47 @@ int kit = 0;
 
 // encoder callbacks
 void onEb1Clicked(EncoderButton& eb) {
-  Serial.print("eb1 clickCount: ");
-  Serial.println(eb.clickCount());
-    displayUpdate();
+  if (debug) {
+    Serial.print("eb1 clickCount: ");
+    Serial.println(eb.clickCount());
+  }
+
 }
 
 /**
- * A function to handle the 'encoder' event
- */
+   A function to handle the 'encoder' event
+*/
 void onEb1Encoder(EncoderButton& eb) {
-  Serial.print("eb1 incremented by: ");
-  Serial.println(eb.increment());
-  Serial.print("eb1 position is: ");
-  Serial.println(eb.position());
-  displayUpdate();
+  kit = eb1.position();
+  constrain( kit, 0, 7);
+  if (debug) {
+    Serial.print("eb1 incremented by: ");
+    Serial.println(eb.increment());
+    Serial.print("eb1 position is: ");
+    Serial.println(eb.position());
+  }
+
 }
 
 //
 // --- display details
 //
-typedef struct { int x; int y;  const char* str;} pos_t;
+typedef struct {
+  int x;
+  int y;
+  const char* str;
+} pos_t;
 //// {x,y} locations of play screen items
 const int step_text_pos[] = { 0, 15, 16, 15, 32, 15, 48, 15, 64, 15, 80, 15, 96, 15, 112, 15 };
-const pos_t bpm_text_pos    = {.x=0,  .y=15, .str="bpm:%3d" };
-const pos_t trans_text_pos  = {.x=35, .y=15, .str="trs:%+2d" };
-const pos_t seqno_text_pos  = {.x=75, .y=15, .str="seq:%d" };
-const pos_t seq_info_pos    = {.x=60, .y=45, .str="" };
-const pos_t play_text_pos   = {.x=110,.y=57, .str="" };
+const pos_t bpm_text_pos    = {.x = 0,  .y = 5, .str = "bpm:%3d" };
+const pos_t trans_text_pos  = {.x = 0, .y = 15, .str = "trs:%+2d" };
+const pos_t seqno_text_pos  = {.x = 0, .y = 28, .str = "seq:%d" };
+const pos_t seq_info_pos    = {.x = 60, .y = 45, .str = "" };
+const pos_t play_text_pos   = {.x = 110, .y = 57, .str = "" };
 
-const pos_t oct_text_offset = { .x=3, .y=10,  .str="" };
-const pos_t gate_bar_offset = { .x=0, .y=-15, .str="" };
-const pos_t edit_text_offset= { .x=3, .y=22,  .str="" };
+const pos_t oct_text_offset = { .x = 3, .y = 10,  .str = "" };
+const pos_t gate_bar_offset = { .x = 0, .y = -15, .str = "" };
+const pos_t edit_text_offset = { .x = 3, .y = 22,  .str = "" };
 const int gate_bar_width = 14;
 const int gate_bar_height = 4;
 
@@ -268,21 +279,21 @@ void displayUpdate() {
   display.clearDisplay();
   display.setFont(&myfont);
   display.setTextColor(WHITE, 0);
- 
+
   // bpm
   display.setCursor(bpm_text_pos.x, bpm_text_pos.y);
-  display.print("inc: ");
-  display.print(eb1.increment());
+  display.print("BPM: ");
+  display.print(tempo);
 
   // transpose
   display.setCursor(trans_text_pos.x, trans_text_pos.y);
-    display.print("pos: ");
-  display.print(eb1.position());
+  display.print("FILLS: ");
+  display.print(numberOfFills);
 
   // seqno
   display.setCursor(seqno_text_pos.x, seqno_text_pos.y);
-  display.print("clks: ");
-  display.print(eb1.clickCount());  // user sees 1-8
+  display.print("KIT: ");
+  display.print(kit);  // user sees 1-8
 
   // seq info / meta
   //display.setCursor(seq_info_pos.x, seq_info_pos.y);
@@ -295,42 +306,46 @@ void displayUpdate() {
   display.display();
 }
 
+bool haveDisplay = true;
+
+void displaySetup() {
+  delay(2000);
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    //for(;;); // Don't proceed, loop forever
+    haveDisplay = false;
+  }
+#ifdef PANEL_USD
+  display.setRotation(2);  // 180 degree rotation for upside-down use
+#else
+  display.setRotation(2);  // Normal orientation
+#endif
+  display.clearDisplay();
+  display.setTextSize(0);
+  display.setTextColor(WHITE);
+  //analogReference(DEFAULT);
+
+  display.drawPixel(10, 10, SSD1306_WHITE);
+  // Show the display buffer on the screen. You MUST call display() after
+  // drawing commands to make them visible on screen!
+  display.display();
+  delay(500);
+
+}
+
 void setup() {
-   Serial.begin(9600);
-   
-   //Link the event(s) to your function
+  
+  Serial.begin(57600);
+  displaySetup();
+  
+
+  //Link the event(s) to your function
   eb1.setClickHandler(onEb1Clicked);
   eb1.setEncoderHandler(onEb1Encoder);
-
-  
-  // initialize the pushbuttons on rampart as an input:
-  //pinMode(B2_PIN, INPUT);
-  //pinMode(B3_PIN, INPUT);
-  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
-  }
-
-  // Show initial display buffer contents on the screen --
-  // the library initializes this with an Adafruit splash screen.
-  display.display();
-  delay(2000); // Pause for 2 seconds
-
-  // Clear the buffer
-  display.clearDisplay();
-
-  // Draw a single pixel in white
-  display.drawPixel(10, 10, SSD1306_WHITE);
-  
-
-
-#ifdef Test
-  Serial.println ("Initialising VS10xx");
-#endif // TEST
-
   // put your setup code here, to run once:
   initialiseVS10xx();
+
 
 
   // This listens to all MIDI channels
@@ -377,7 +392,7 @@ void setup() {
   // For some reason, the last program change isn't registered
   // without an extra "dummy" read here.
   talkMIDI(0x80, 0, 0);
-  
+
   // Set these invalid to trigger a read of the pots
   // (if being used) first time through.
 
@@ -392,8 +407,8 @@ void setup() {
 
 
   /**** set up Euclidean sequences ****/
-  generateSequence(8,31);
- // startBeat();
+  generateSequence(8, 31);
+  // startBeat();
 
   /*
     #ifdef VS_VCC
@@ -447,7 +462,7 @@ unsigned int numSteps = 32; // number of steps used - dependent on time signatur
 bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE THIS LATER)
 
 /*
- *storedValues[BEAT] = 27;
+  storedValues[BEAT] = 27;
   storedValues[TIME_SIGNATURE] = 64; // equates to 4/4
   storedValues[SWING] = 0;
   storedValues[TEMPO] = 110; // actually equates to 120BPM
@@ -459,15 +474,15 @@ bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE TH
     if(rand(0,4)==0) storedValues[TEMPO] = rand(0,256);
   }
   storedValues[SWING] = rand(0,256);
- */
- 
+*/
+
 unsigned long nexttick;
 
 // tempo variables
 float tapTimes[4];
 byte nextTapIndex = 0;
 byte paramTimeSignature = 64; // 1 to 13 (3/4, 4/4, 5/4, 6/4, 7/4)
-float paramTempo = 80; 
+float paramTempo = 80;
 byte paramSwing = 0; // 0 to 2 (0=straight, 1=approx quintuplet swing, 2=triplet swing)
 
 int syncTicks = 0;
@@ -486,44 +501,44 @@ unsigned long sync;
 void loop() {
 
 #ifdef TEST
-  Serial.println ( getStepNumber() );
+  //Serial.println ( getStepNumber() );
 #endif
 
   //encoder update
-   eb1.update();
-    
-  /* Drum kid
-  
-  msPerPulse = 2500.0 / tempo ; // paramTempo;
+  eb1.update();
 
-  // perform pulse actions inside loop - stop beat if everything gets super overloaded
-  byte numLoops = 0;
-  while(!syncReceived && beatPlaying && millis()>=nextPulseTime) {
+  /* Drum kid
+
+    msPerPulse = 2500.0 / tempo ; // paramTempo;
+
+    // perform pulse actions inside loop - stop beat if everything gets super overloaded
+    byte numLoops = 0;
+    while(!syncReceived && beatPlaying && millis()>=nextPulseTime) {
     if(numLoops<5) doPulseActions();
     nextPulseTime = nextPulseTime + msPerPulse;
     if(numLoops>=100) beatPlaying = false;
     numLoops ++;
-  }
-  /*
-  // Only play the note in the pattern if we've met the criteria for
-  // the next "tick" happening.
+    }
+    /*
+    // Only play the note in the pattern if we've met the criteria for
+    // the next "tick" happening.
   */
-  
+
   msPerPulse = 2500.0 / tempo ; // 20.833 ms per beat at 4/4 120BPM
-  
+
   unsigned long timenow = millis();
   if (timenow >= nexttick) {
-      //nexttick = sync + millis();
-      // we use a multiplier of parts of fill in 32 steps. 
-      // this should be adjustable 
-      
-      nexttick = millis() + (unsigned long)(1000 / (tempo / 60) )/ 24;
-      //nexttick = nexttick + msPerPulse;
-      
+    //nexttick = sync + millis();
+    // we use a multiplier of parts of fill in 32 steps.
+    // this should be adjustable
+
+    nexttick = millis() + (unsigned long)(1000 / (tempo / 60) ) / 24;
+    //nexttick = nexttick + msPerPulse;
+
     //Serial.println(nexttick);
     // check if we've hit the end of a 32 step pattern
     // if so, new pattern. reset counter.
-    
+
     if ( clkCounter == 32) {
       if (currentRepeat == repeats) {
         generateSequence(numberOfFills, 31);
@@ -555,7 +570,7 @@ void loop() {
 
       //swing a bit but not too much
       if (swing) {
-        delay (random(30));
+        delay (random(3));
         //Serial.println("swinging");
       }
 
@@ -565,22 +580,22 @@ void loop() {
     // generate the current step 0/1, increment counter
     doStep();
     clkCounter++;
-    
-#ifdef TEST
-/*
-    Serial.print ("KIT: ");
-    Serial.println ( kit);
 
-    Serial.print ("REPEATS: ");
-    Serial.println ( repeats);
-    //Serial.print ("CURREPEAT: ");
-    //Serial.println ( currentRepeat);
-    //Serial.println ("");
-    Serial.print ("TEMPO: ");
-    Serial.println ( tempo);
-    Serial.print ("FILLS: ");
-    Serial.println ( numberOfFills);
-*/
+#ifdef TEST
+    /*
+        Serial.print ("KIT: ");
+        Serial.println ( kit);
+
+        Serial.print ("REPEATS: ");
+        Serial.println ( repeats);
+        //Serial.print ("CURREPEAT: ");
+        //Serial.println ( currentRepeat);
+        //Serial.println ("");
+        Serial.print ("TEMPO: ");
+        Serial.println ( tempo);
+        Serial.print ("FILLS: ");
+        Serial.println ( numberOfFills);
+    */
 #endif
   }
 
@@ -590,11 +605,15 @@ void loop() {
     // for POT_MIDI_CHANNEL (if POT_MIDI is defined).
 
 #ifdef POT_KIT
-    int pot0 = map(analogRead(POT_KIT), 0, 1023, 0, KIT);
-    if (pot0 != kit) {
-      kit = pot0;
-      Serial.print ("KIT: ");
-      Serial.println ( kit);
+    int pot0 = map(analogRead(POT_KIT), 0, 1023, 0, 31);
+    if (pot0 != repeats) {
+      repeats = pot0;
+      currentRepeat = 0;
+      if (debug) {
+        Serial.print ("Repeats: ");
+        Serial.println ( repeats);
+      }
+      if (haveDisplay) displayUpdate();
 
     }
 #endif // POT_KIT
@@ -604,9 +623,13 @@ void loop() {
     if (pot3 != numberOfFills) {
       numberOfFills = pot3;  // Number of fills 4-16
       // reset repeats
-      Serial.println(numberOfFills);
+      if (debug) {
+        Serial.print ("Fills: ");
+        Serial.println(numberOfFills);
+      }
       currentRepeat = 0;
       clkCounter = 0;
+      if (haveDisplay) displayUpdate();
     }
 #endif // POT_FILLS
   }
@@ -614,13 +637,16 @@ void loop() {
   else if (loopstate == 1) {
 
 #ifdef POT_TEMPO
-    int pot1 = map(analogRead(POT_TEMPO), 0, 1023, 40, 240);
+    int pot1 = map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
     if (pot1 != tempo) {
       tempo = pot1;  // Tempo range is 20 to 275.
       currentRepeat = 0;
       clkCounter = 0;
-      Serial.print ("Tempo: ");
-      Serial.println ( tempo);
+      if (debug) {
+        Serial.print ("Tempo: ");
+        Serial.println ( tempo);
+      }
+     if (haveDisplay) displayUpdate();
 
     }
 #endif // POT_TEMPO
@@ -634,8 +660,11 @@ void loop() {
       //repeats = pot2;  // 0 to 32 repeats
       currentRepeat = 0;
       clkCounter = 0;
-      Serial.print ("Repeats: ");
-      Serial.println ( repeats);
+      if (debug) {
+        Serial.print ("Repeats: ");
+        Serial.println ( repeats);
+      }
+      if (haveDisplay) displayUpdate();
     }
 #endif // POT_REPEATS
 
@@ -649,11 +678,11 @@ void loop() {
 
   // conflicts with tests on encoder
   /*
-  static int previous1, previous2;
-  int current1 = digitalRead(B2_PIN);
-  int current2 = digitalRead(B3_PIN);
+    static int previous1, previous2;
+    int current1 = digitalRead(B2_PIN);
+    int current2 = digitalRead(B3_PIN);
 
-  if (previous1 == LOW && current1 == HIGH) {
+    if (previous1 == LOW && current1 == HIGH) {
     if (bState1 == 1) {
       bState1 = 0;
       swing = 0;
@@ -663,13 +692,13 @@ void loop() {
     }
     //Serial.println("But1");
     //Serial.println(bState1);
-  }
-  previous1 = current1;
-  if ( bState1 == 0 ) {
-  } else if ( bState1 == 1 ) {
-  }
+    }
+    previous1 = current1;
+    if ( bState1 == 0 ) {
+    } else if ( bState1 == 1 ) {
+    }
 
-  if (previous2 == LOW && current2 == HIGH) {
+    if (previous2 == LOW && current2 == HIGH) {
     if (bState2 == 1) {
       bState2 = 0;
     } else {
@@ -677,16 +706,16 @@ void loop() {
     }
     Serial.println("But2");
     Serial.println(bState2);
-  }
-  previous2 = current2;
-  if ( bState2 == 0 ) {
+    }
+    previous2 = current2;
+    if ( bState2 == 0 ) {
     //updateWavePacket();
-  } else if ( bState2 == 1 ) {
+    } else if ( bState2 == 1 ) {
     //updateFM();
 
-  }
+    }
   */
-  
+
   /* tap tempo logic
       if(buttons[5].fell()) {
         tapTimes[nextTapIndex] = (float) millis();
@@ -715,7 +744,7 @@ void loop() {
           storedValues[TEMPO] = tempoToByte(paramTempo);
         }
         nextTapIndex = (nextTapIndex + 1) % NUM_TAP_TIMES;
-        
+
         if(controlSet==TEMPO/NUM_KNOBS) {
           byte tempoKnobNum = TEMPO%NUM_KNOBS;
           bitWrite(knobLocked, tempoKnobNum, true);
