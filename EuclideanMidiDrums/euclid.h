@@ -1,5 +1,5 @@
 #pragma once
-#define NUMBER_OF_STEPS 32
+#define NUMBER_OF_STEPS 16
 
 class euclid {
 

@@ -22,7 +22,8 @@ using namespace std;
 #include <Wire.h>
 #include <MIDI.h>
 
-#include <EncoderButton.h>
+//#include <EncoderButton.h>
+//EncoderButton eb1(4, 3, 2);
 //#include "font.h"
 #include "vs10xx_uc.h" // From VLSI website: http://www.vlsi.fi/en/support/software/microcontrollersoftware.html
 
@@ -52,10 +53,12 @@ SSOLED ssoled;
 
 bool debug = true;
 
-// init encoder, sda and scl are on 3, 4 (2 to ground).
+// init encoder, are on 3, 4 button on 2
 // this lib does accel and counts multiple clicks.
 
-EncoderButton eb1(4, 3, 2);
+//#define ENCODER_DO_NOT_USE_INTERRUPTS
+#include <Encoder.h>
+Encoder myEnc(4, 3);
 
 // font for display
 #define myfont Org_01  // sigh
@@ -238,19 +241,17 @@ int kits[KIT][13] = {
 
 int kit = 0;
 
+
 // encoder callbacks
-void onEb1Clicked(EncoderButton& eb) {
+/*
+  void onEb1Clicked(EncoderButton& eb) {
   if (debug) {
     Serial.print("eb1 clickCount: ");
     Serial.println(eb.clickCount());
   }
 
-}
-
-/**
-   A function to handle the 'encoder' event
-*/
-void onEb1Encoder(EncoderButton& eb) {
+  }
+  void onEb1Encoder(EncoderButton& eb) {
   kit = eb1.position();
   constrain( kit, 0, 7);
   if (debug) {
@@ -260,7 +261,9 @@ void onEb1Encoder(EncoderButton& eb) {
     Serial.println(eb.position());
   }
 
-}
+  }
+*/
+
 // Globals, clean up!
 uint8_t steps, fills, lastSteps, lastFills, repeats ;
 uint8_t currentRepeat = 0;
@@ -271,6 +274,7 @@ uint8_t instrs;
 uint8_t timings;
 int loopstate;
 
+bool uiUpdate = false;
 
 // time keeping global variables much from drum kid
 float nextPulseTime = 0.0; // the time, in milliseconds, of the next pulse
@@ -283,35 +287,46 @@ bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE TH
 
 // util int to char array
 void int_to_char(int num, char *result) {
-    int temp = num;
-    int len = 0;
+  int temp = num;
+  int len = 0;
 
-    while (temp > 0) {
-        len++;
-        temp /= 10;
-    }
+  while (temp > 0) {
+    len++;
+    temp /= 10;
+  }
 
-    for (int i = len - 1; i >= 0; i--) {
-        result[i] = num % 10 + '0';
-        num /= 10;
-    }
+  for (int i = len - 1; i >= 0; i--) {
+    result[i] = num % 10 + '0';
+    num /= 10;
+  }
 
-    result[len] = '\0';
+  result[len] = '\0';
 }
+
 // general display update
 void displayUpdate() {
-      int i, x, y;
-    oledFill(&ssoled, 0, 1);
-    //oledWriteString(&ssoled, 0, 16, 0,(char *)"ss_oled Demo", FONT_NORMAL, 0, 1);
-    //oledWriteString(&ssoled, 0, 0, 1,(char *)"Written by Larry Bank", FONT_SMALL, 1, 1);
-    oledWriteString(&ssoled, 0, 0, 0,(char *)"BPM ", FONT_STRETCHED, 0, 1);
-   
-    char result[100];
-    int_to_char(tempo, result);
-    
-    oledWriteString(&ssoled, 0, 64, 0,result, FONT_STRETCHED, 0, 1);
-    oledWriteString(&ssoled, 0, 0, 3,(char *)"K 7", FONT_STRETCHED, 0, 1);
-    oledWriteString(&ssoled, 0, 0, 6,(char *)"F 16 R 12", FONT_STRETCHED, 0, 1);
+  int i, x, y;
+  oledFill(&ssoled, 0, 1);
+
+  char result[100];
+  int_to_char(tempo, result);
+  oledWriteString(&ssoled, 0, 0, 0, (char *)"BPM ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 58, 0, result, FONT_STRETCHED, 0, 1);
+
+  char kits[100];
+  int_to_char(kit, kits);
+  oledWriteString(&ssoled, 0, 0, 3, (char *)"K", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 24, 3, kits, FONT_STRETCHED, 0, 1);
+
+  char fills[100];
+  int_to_char(numberOfFills, fills);
+  oledWriteString(&ssoled, 0, 56, 3, (char *)"FLS ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 96, 3, fills, FONT_STRETCHED, 0, 1);
+
+  char reps[100];
+  int_to_char(repeats, reps);
+  oledWriteString(&ssoled, 0, 0, 6, (char *)"REP", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 72, 6, reps, FONT_STRETCHED, 0, 1);
 
 }
 
@@ -320,27 +335,29 @@ bool haveDisplay = false;
 
 // setup function, oled
 
-void displaySetup(){
-      int rc;
-    rc = oledInit(&ssoled, OLED_128x64, OLED_ADDR, FLIP180, INVERT, USE_HW_I2C, SDA_PIN, SCL_PIN, RESET_PIN, 400000L);       // Standard HW I2C bus at 400Khz
+void displaySetup() {
+  int rc;
+  //rc = oledInit(&ssoled, OLED_128x64, OLED_ADDR, FLIP180, INVERT, USE_HW_I2C, SDA_PIN, SCL_PIN, -1, 400000L);
+  rc = oledInit(&ssoled, OLED_128x64, OLED_ADDR, FLIP180, INVERT, USE_HW_I2C, -1, -1, -1, 400000L);
+  // Standard HW I2C bus at 400Khz
 
-    if (rc != OLED_NOT_FOUND)
+  if (rc != OLED_NOT_FOUND)
+  {
+    char *msgs[] =
     {
-        char *msgs[] =
-        {
-          (char *)"SSD1306 @ 0x3C",
-          (char *)"SSD1306 @ 0x3D",
-          (char *)"SH1106 @ 0x3C",
-          (char *)"SH1106 @ 0x3D"
-        };
+      (char *)"SSD1306 @ 0x3C",
+      (char *)"SSD1306 @ 0x3D",
+      (char *)"SH1106 @ 0x3C",
+      (char *)"SH1106 @ 0x3D"
+    };
 
-        oledFill(&ssoled, 0, 1);
-        oledWriteString(&ssoled, 0, 0, 0, (char *)"TrEbUcHeT", FONT_STRETCHED, 0, 1);
-        oledWriteString(&ssoled, 0, 10, 2, msgs[rc], FONT_NORMAL, 0, 1);
+    oledFill(&ssoled, 0, 1);
+    oledWriteString(&ssoled, 0, 0, 0, (char *)"TrEbUcHeT", FONT_STRETCHED, 0, 1);
+    oledWriteString(&ssoled, 0, 10, 2, msgs[rc], FONT_NORMAL, 0, 1);
 
-        haveDisplay = true;
-        delay(1000);
-    }
+    haveDisplay = true;
+    delay(1000);
+  }
 }
 
 void setup() {
@@ -348,22 +365,13 @@ void setup() {
   Serial.begin(57600);
 
   displaySetup();
-  
-  //Link the event(s) to your function
-  eb1.setClickHandler(onEb1Clicked);
-  eb1.setEncoderHandler(onEb1Encoder);
+
   // put your setup code here, to run once:
   initialiseVS10xx();
 
-  repeats = map(analogRead(POT_KIT), 0, 1023, 0, 31);
-  numberOfFills = map(analogRead(POT_FILLS), 0, 1023, 1, 16);
+  repeats = map(analogRead(POT_KIT), 0, 1023, 0, 32);
+  numberOfFills = map(analogRead(POT_FILLS), 0, 1023, 1, 32);
   tempo =  map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
-
-
-
-
-
-
 
 
   // This listens to all MIDI channels
@@ -425,56 +433,9 @@ void setup() {
 
 
   /**** set up Euclidean sequences ****/
-  generateSequence(8, 31);
-  // startBeat();
-
-  /*
-    #ifdef VS_VCC
-    pinMode(VS_VCC, OUTPUT);
-    digitalWrite(VS_VCC, HIGH);
-    #endif // VS_VCC
-    #ifdef VS_GND
-    pinMode(VS_GND, OUTPUT);
-    digitalWrite(VS_GND, LOW);
-    #endif // VS_GND
-    #ifdef MIDI_LED1
-    pinMode(MIDI_LED1, OUTPUT);
-    // flash the LED on startup
-    for (int i=0; i<4; i++) {
-      digitalWrite(MIDI_LED1, HIGH);
-      delay(100);
-      digitalWrite(MIDI_LED1, LOW);
-      delay(100);
-    }
-    #endif // MIDI_LED1
-    #ifdef MIDI_LED2
-    pinMode(MIDI_LED2, OUTPUT);
-    // flash the LED on startup
-    for (int i=0; i<4; i++) {
-      digitalWrite(MIDI_LED2, HIGH);
-      delay(100);
-      digitalWrite(MIDI_LED2, LOW);
-      delay(100);
-    }
-    #endif // MIDI_LED2
-  */
+  generateSequence(numberOfFills, 32);
 }
 
-
-/*
-  storedValues[BEAT] = 27;
-  storedValues[TIME_SIGNATURE] = 64; // equates to 4/4
-  storedValues[SWING] = 0;
-  storedValues[TEMPO] = 110; // actually equates to 120BPM
-  if(!beatPlaying) {
-    // don't randomise time signature and tempo unless stopped
-    storedValues[TIME_SIGNATURE] = 64; // equates to 4/4
-    if(rand(0,3)==0) storedValues[TIME_SIGNATURE] = rand(0,256);
-    storedValues[TEMPO] = rand(70,160);
-    if(rand(0,4)==0) storedValues[TEMPO] = rand(0,256);
-  }
-  storedValues[SWING] = rand(0,256);
-*/
 
 unsigned long nexttick;
 
@@ -494,18 +455,8 @@ unsigned long sync;
 
 
 // main loop
-
-
-
-
 void loop() {
 
-#ifdef TEST
-  //Serial.println ( getStepNumber() );
-#endif
-
-  //encoder update
-  eb1.update();
 
   /* Drum kid
 
@@ -541,7 +492,7 @@ void loop() {
 
     if ( clkCounter == 32) {
       if (currentRepeat == repeats) {
-        generateSequence(numberOfFills, 31);
+        generateSequence(numberOfFills, 32);
         clkCounter = 0;
         currentRepeat = 0;
         Serial.println("new pattern");
@@ -554,7 +505,8 @@ void loop() {
       Serial.print("incr repeat: ");
       Serial.println(currentRepeat);
     }
-
+    Serial.println(getCurrentStep);
+    
     // update / play sound if currentstep is on
     if (getCurrentStep() ) {
       //Serial.println(getStepNumber());
@@ -581,22 +533,6 @@ void loop() {
     doStep();
     clkCounter++;
 
-#ifdef TEST
-    /*
-        Serial.print ("KIT: ");
-        Serial.println ( kit);
-
-        Serial.print ("REPEATS: ");
-        Serial.println ( repeats);
-        //Serial.print ("CURREPEAT: ");
-        //Serial.println ( currentRepeat);
-        //Serial.println ("");
-        Serial.print ("TEMPO: ");
-        Serial.println ( tempo);
-        Serial.print ("FILLS: ");
-        Serial.println ( numberOfFills);
-    */
-#endif
   }
 
   if (loopstate == 0) {
@@ -613,13 +549,14 @@ void loop() {
         Serial.print ("Repeats: ");
         Serial.println ( repeats);
       }
-      if (haveDisplay) displayUpdate();
+      uiUpdate = true;
+
 
     }
 #endif // POT_KIT
 
 #ifdef POT_FILLS
-    int pot3 = map(analogRead(POT_FILLS), 0, 1023, 1, 16);
+    int pot3 = map(analogRead(POT_FILLS), 0, 1023, 1, 32);
     if (pot3 != numberOfFills) {
       numberOfFills = pot3;  // Number of fills 4-16
       // reset repeats
@@ -629,7 +566,9 @@ void loop() {
       }
       currentRepeat = 0;
       clkCounter = 0;
-      if (haveDisplay) displayUpdate();
+      generateSequence(numberOfFills, 32);
+      uiUpdate = true;
+
     }
 #endif // POT_FILLS
   }
@@ -646,7 +585,8 @@ void loop() {
         Serial.print ("Tempo: ");
         Serial.println ( tempo);
       }
-      if (haveDisplay) displayUpdate();
+      uiUpdate = true;
+
 
     }
 #endif // POT_TEMPO
@@ -664,114 +604,34 @@ void loop() {
         Serial.print ("Repeats: ");
         Serial.println ( repeats);
       }
-      if (haveDisplay) {displayUpdate();
+      uiUpdate = true;
+
     }
 #endif // POT_REPEATS
 
   }
+  long newPos = myEnc.read()/4;
+  if (newPos != kit && newPos > -1 && newPos < 8) {
+    kit = newPos;
+    if (debug) {
+      Serial.print("kit: ");
+      Serial.println(kit);
+    }
+    uiUpdate = true;
+  }
+
   loopstate++;
   if (loopstate > 2) loopstate = 0;
 
 
-  // this is TOGGLE logic. move to debounce
-  // button handling for number of steps
+  //encoder update
+  //eb1.update();
 
-  // conflicts with tests on encoder
-  /*
-    static int previous1, previous2;
-    int current1 = digitalRead(B2_PIN);
-    int current2 = digitalRead(B3_PIN);
+  if (uiUpdate) {
 
-    if (previous1 == LOW && current1 == HIGH) {
-    if (bState1 == 1) {
-      bState1 = 0;
-      swing = 0;
-    } else {
-      bState1 = 1;
-      swing = 1;
-    }
-    //Serial.println("But1");
-    //Serial.println(bState1);
-    }
-    previous1 = current1;
-    if ( bState1 == 0 ) {
-    } else if ( bState1 == 1 ) {
-    }
-
-    if (previous2 == LOW && current2 == HIGH) {
-    if (bState2 == 1) {
-      bState2 = 0;
-    } else {
-      bState2 = 1;
-    }
-    Serial.println("But2");
-    Serial.println(bState2);
-    }
-    previous2 = current2;
-    if ( bState2 == 0 ) {
-    //updateWavePacket();
-    } else if ( bState2 == 1 ) {
-    //updateFM();
-
-    }
-  */
-
-  /* tap tempo logic
-      if(buttons[5].fell()) {
-        tapTimes[nextTapIndex] = (float) millis();
-
-        float firstTime;
-        float timeTally = 0.0;
-        byte validTimes = 0;
-        bool keepChecking = true;
-        for(i=0;i<NUM_TAP_TIMES-1 && keepChecking;i++) {
-          byte thisTapIndex = (nextTapIndex + NUM_TAP_TIMES - i) % NUM_TAP_TIMES;
-          byte lastTapIndex = (nextTapIndex + NUM_TAP_TIMES - i - 1) % NUM_TAP_TIMES;
-
-          float thisTime = tapTimes[thisTapIndex] - tapTimes[lastTapIndex];
-          if(i==0) firstTime = thisTime;
-          float timeCompare = firstTime/thisTime;
-          if(tapTimes[lastTapIndex] > 0.0 && timeCompare > 0.8 && timeCompare < 1.2) {
-            timeTally += thisTime;
-            validTimes ++;
-          } else {
-            keepChecking = false;
-          }
-        }
-        if(validTimes>=2) {
-          float newPulseLength = (timeTally / validTimes) / 24;
-          paramTempo = 2500.0 / newPulseLength;
-          storedValues[TEMPO] = tempoToByte(paramTempo);
-        }
-        nextTapIndex = (nextTapIndex + 1) % NUM_TAP_TIMES;
-
-        if(controlSet==TEMPO/NUM_KNOBS) {
-          byte tempoKnobNum = TEMPO%NUM_KNOBS;
-          bitWrite(knobLocked, tempoKnobNum, true);
-          initValues[tempoKnobNum] = analogValues[tempoKnobNum];
-        }
-      }
-  */
-  /*
-    #ifdef POT_VOL
-    // Need a value between 0 and 254 for the volume
-    byte pot2 = analogRead (POT_VOL) >> 2;
-    if (pot2 > 254) pot2 = 254;
-    if (pot2 != volume) {
-      // Set the volume on both channels.
-      //
-      // Note that the volume setting is actually an attenuation
-      // setting, which means the loudest is 0 (no attenuation)
-      // and the quietest is 254 or 0xFE (full attenuation).
-      //
-      // To preserve the "pot at zero, volume at zero" feeling
-      // we reverse the values here.
-      //
-      VSWriteRegister(SCI_VOL, 254-pot2, 254-pot2);
-      volume = pot2;
-    }
-    #endif // POT_VOL*/
-
+    displayUpdate();
+    uiUpdate = false;
+  }
 
 }
 // END main loop
@@ -898,6 +758,8 @@ void talkMIDI(byte cmd, byte data1, byte data2) {
   }
 
   digitalWrite(VS_XDCS, HIGH);
+
+
 }
 
 
