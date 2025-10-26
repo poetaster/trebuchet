@@ -212,7 +212,7 @@ byte instrument;
 char teststr[32];
 #endif
 
-#define KIT 8
+#define KIT 9
 
 #define VS1003_D_BASS     35   // 35 36 86 87
 #define VS1003_D_SNARE    38   // 38 40
@@ -229,14 +229,15 @@ char teststr[32];
 #define VS1003_D_CLAVES   75   // 28 31 32 33 37 56 67 68 75 76 77 83 84 85
 
 int kits[KIT][13] = {
-  { 42, 36, 38, 42, 38, 36, 42, 55, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
-  { 35, 40, 42, 46, 35, 40, 42, 46, 42, 38, 64, 37, 42 }, // not bad
-  { 36, 40, 36, 42, 42, 40, 40, 70, 46, 36, 75, 70, 37 }, // not bad
+  { 42, 36, 38, 42, 38, 28, 42, 31, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
+  { 35, 40, 42, 46, 35, 40, 42, 38, 42, 38, 64, 37, 42 }, // not bad
+  { 36, 40, 36, 42, 42, 40, 40, 70, 46, 36, 28, 70, 37 }, // not bad
   { 35, 38, 42, 40, 35, 42, 70, 42, 46, 70, 46, 35, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
-  { 35, 38, 42, 40, 36, 46, 36, 42, 46, 38, 37, 61, 42 }, // little more on the snare side/ HH, lo conga, one clave hit
-  { 46, 38, 40, 42, 46, 70, 42, 46, 44, 70, 46, 37, 64 }, // clicks snare side stick maracas
-  { 44, 76, 42, 44, 77, 42, 44, 77, 44, 46, 44, 46, 85 }, // clicks, hh, castenets
-  { 27, 28, 29, 30, 31, 32, 33, 34, 69, 76, 77, 78, 79 },
+  { 35, 38, 28, 40, 36, 46, 35, 42, 46, 38, 37, 63, 42 }, // little more on the snare side/ HH, lo conga, one clave hit
+  { 46, 38, 40, 42, 27, 58, 42, 46, 44, 70, 28, 37, 64 }, // clicks snare side stick maracas
+  { 44, 28, 42, 44, 28, 42, 38, 27, 44, 46, 44, 46, 85 }, // clicks, hh, castenets
+  { 27, 28, 58, 28, 31, 31, 33, 34, 69, 28, 77, 31, 28 },
+  { 73, 70, 31, 69, 70, 42, 82, 46, 28, 27, 69, 31, 28 },
 }; // Bass, Snare, HHO, HHC
 
 int kit = 0;
@@ -314,7 +315,7 @@ void displayUpdate() {
   oledWriteString(&ssoled, 0, 58, 0, result, FONT_STRETCHED, 0, 1);
 
   char kits[100];
-  int_to_char(kit, kits);
+  int_to_char(kit+1, kits);
   oledWriteString(&ssoled, 0, 0, 3, (char *)"K", FONT_STRETCHED, 0, 1);
   oledWriteString(&ssoled, 0, 24, 3, kits, FONT_STRETCHED, 0, 1);
 
@@ -414,7 +415,7 @@ void setup() {
     }
   }
   // try set second kit.
-  //talkMIDI(0x00,0xb0,0x7f);
+  //htalkMIDI(0x00,0xb0,0x7f);
   // For some reason, the last program change isn't registered
   // without an extra "dummy" read here.
   talkMIDI(0x80, 0, 0);
@@ -505,16 +506,17 @@ void loop() {
       Serial.print("incr repeat: ");
       Serial.println(currentRepeat);
     }
-    Serial.println(getCurrentStep);
+    //Serial.println(getStep(stepCounter));
     
     // update / play sound if currentstep is on
     if (getCurrentStep() ) {
       //Serial.println(getStepNumber());
       int rr = random(13); // should use length of [kit]
       int note = kits[kit][rr];
-      //Serial.println ( note);
+      //if (debug) Serial.println ( note);
+      
       // we're addding a bit of randomness to velocity
-      int vel = 127 - random(50);
+      int vel = 127 - random(70);
       if (note == 75 || note == 57) {
         vel = 90 ;
       }
@@ -611,7 +613,7 @@ void loop() {
 
   }
   long newPos = myEnc.read()/4;
-  if (newPos != kit && newPos > -1 && newPos < 8) {
+  if (newPos != kit && newPos > -1 && newPos < 9) {
     kit = newPos;
     if (debug) {
       Serial.print("kit: ");
