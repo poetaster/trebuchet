@@ -22,9 +22,13 @@ using namespace std;
 #include <Wire.h>
 #include <MIDI.h>
 
-//#include <EncoderButton.h>
-//EncoderButton eb1(4, 3, 2);
-//#include "font.h"
+
+// button inputs
+#define SW1 2
+#include <Bounce2.h>
+Bounce2::Button btn_one = Bounce2::Button();
+
+
 #include "vs10xx_uc.h" // From VLSI website: http://www.vlsi.fi/en/support/software/microcontrollersoftware.html
 
 #include <ss_oled.h>
@@ -200,7 +204,8 @@ byte preset_instruments[16] = {
 
 // This is required to set up the MIDI library.
 // The default MIDI setup uses the built-in serial port.
-MIDI_CREATE_DEFAULT_INSTANCE();
+//MIDI_CREATE_DEFAULT_INSTANCE();
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
 
 // Defaults, but will be overridden by POT settings if enabled
 uint16_t volume = 0;
@@ -315,7 +320,7 @@ void displayUpdate() {
   oledWriteString(&ssoled, 0, 58, 0, result, FONT_STRETCHED, 0, 1);
 
   char kits[100];
-  int_to_char(kit+1, kits);
+  int_to_char(kit + 1, kits);
   oledWriteString(&ssoled, 0, 0, 3, (char *)"K", FONT_STRETCHED, 0, 1);
   oledWriteString(&ssoled, 0, 24, 3, kits, FONT_STRETCHED, 0, 1);
 
@@ -363,7 +368,12 @@ void displaySetup() {
 
 void setup() {
 
-  Serial.begin(57600);
+  if (debug == false) {
+    //blows up sigh
+    //MIDI.begin(MIDI_CHANNEL_OMNI);//MIDI_CHANNEL_OMNI);
+  } else {
+    Serial.begin(57600);
+  }
 
   displaySetup();
 
@@ -375,11 +385,10 @@ void setup() {
   tempo =  map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
 
 
-  // This listens to all MIDI channels
-  // They will be filtered out later...
-#ifndef TEST
-  MIDI.begin(MIDI_CHANNEL_OMNI);
-#endif // TEST
+
+  btn_one.attach( SW1 , INPUT_PULLUP);
+  btn_one.interval(5);
+  btn_one.setPressedState(LOW);
 
   delay(200);
 
@@ -459,23 +468,6 @@ unsigned long sync;
 void loop() {
 
 
-  /* Drum kid
-
-    msPerPulse = 2500.0 / tempo ; // paramTempo;
-
-    // perform pulse actions inside loop - stop beat if everything gets super overloaded
-    byte numLoops = 0;
-    while(!syncReceived && beatPlaying && millis()>=nextPulseTime) {
-    if(numLoops<5) doPulseActions();
-    nextPulseTime = nextPulseTime + msPerPulse;
-    if(numLoops>=100) beatPlaying = false;
-    numLoops ++;
-    }
-    /*
-    // Only play the note in the pattern if we've met the criteria for
-    // the next "tick" happening.
-  */
-
   msPerPulse = 2500.0 / tempo ; // 20.833 ms per beat at 4/4 120BPM
 
   unsigned long timenow = millis();
@@ -507,14 +499,14 @@ void loop() {
       Serial.println(currentRepeat);
     }
     //Serial.println(getStep(stepCounter));
-    
+
     // update / play sound if currentstep is on
     if (getCurrentStep() ) {
       //Serial.println(getStepNumber());
       int rr = random(13); // should use length of [kit]
       int note = kits[kit][rr];
       //if (debug) Serial.println ( note);
-      
+
       // we're addding a bit of randomness to velocity
       int vel = 127 - random(70);
       if (note == 75 || note == 57) {
@@ -612,7 +604,7 @@ void loop() {
 #endif // POT_REPEATS
 
   }
-  long newPos = myEnc.read()/4;
+  long newPos = myEnc.read() / 4;
   if (newPos != kit && newPos > -1 && newPos < 9) {
     kit = newPos;
     if (debug) {
@@ -625,19 +617,36 @@ void loop() {
   loopstate++;
   if (loopstate > 2) loopstate = 0;
 
-
-  //encoder update
-  //eb1.update();
-
   if (uiUpdate) {
 
     displayUpdate();
     uiUpdate = false;
   }
 
+  btn_one.update();
+  read_buttons();
+
 }
 // END main loop
 
+void read_buttons() {
+
+  bool doublePressMode = false;
+  // if button one was held for more than 75 millis
+  /*
+    if (btn_one.rose()) {
+    btnOneLastTime = btn_one.previousDuration();
+    if (btnOneLastTime > 250 && voice_number == 1) easterEgg = !easterEgg;
+    }*/
+
+  if (!doublePressMode) {
+    // being tripple shure :)
+    if (btn_one.pressed() ) {
+      generateRandomSequence(numberOfFills, 32);
+    }
+
+  }
+}
 
 
 /**** Euclidean rythm algos ****/
