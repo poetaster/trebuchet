@@ -246,7 +246,7 @@ void loop() {
   }
   // Read instrument name from PROGMEM
 
-  const char* instrumentName = (const char*)pgm_read_ptr(&gmInstruments[instrument]);
+  const char* instrumentName = (const char*)pgm_read_ptr(&gmInstruments[instrument-1]);
   strncpy_P(buffer, instrumentName, sizeof(buffer) - 1);
   buffer[sizeof(buffer) - 1] = '\0';
 

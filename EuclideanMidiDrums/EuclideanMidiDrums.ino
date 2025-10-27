@@ -379,32 +379,20 @@ void setup() {
 
   // put your setup code here, to run once:
   initialiseVS10xx();
-
+  
+  // setup the encoder button
+  btn_one.attach( SW1 , INPUT_PULLUP);
+  btn_one.interval(5);
+  btn_one.setPressedState(LOW);
+  
+  // initialize from current pot positoins
   repeats = map(analogRead(POT_KIT), 0, 1023, 0, 32);
   numberOfFills = map(analogRead(POT_FILLS), 0, 1023, 1, 32);
   tempo =  map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
 
 
 
-  btn_one.attach( SW1 , INPUT_PULLUP);
-  btn_one.interval(5);
-  btn_one.setPressedState(LOW);
-
   delay(200);
-
-#ifdef SOUND_CHECK
-  // A test "output" to see if the VS0xx is working ok
-  for ( byte i = 2; i < 127; i++) {
-
-    int rr = random(13);
-    int note = kits[kit][rr];
-    talkMIDI (0x99, i, 127);
-    Serial.println (i);
-    delay (100);
-    talkMIDI (0x89, note, 0);
-    delay (500);
-  }
-#endif // SOUND_CHECK
 
   // Configure the instruments for all required MIDI channels.
   // Even though MIDI channels are 1 to 16, all the code here
