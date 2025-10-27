@@ -49,7 +49,7 @@ SSOLED ssoled;
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
 
-bool debug = true;
+bool debug = false;
 
 // init encoder, are on 3, 4 button on 2
 // this lib does accel and counts multiple clicks.
@@ -123,38 +123,14 @@ VS1053_MIDI vsmidi(VS1053_XCS, VS1053_XDCS, VS1053_DREQ, VS1053_RESET);
 
 // This is required to set up the MIDI library.
 // The default MIDI setup uses the built-in serial port.
-//MIDI_CREATE_DEFAULT_INSTANCE();
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
+MIDI_CREATE_DEFAULT_INSTANCE();
+//MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
 
+#include "kits.h"
 
-
-// define some drum kits
-#define KIT 9
-#define VS1003_D_BASS     35   // 35 36 86 87
-#define VS1003_D_SNARE    38   // 38 40
-#define VS1003_D_HHC      42   // 42 44 71 80 // good
-#define VS1003_D_HHO      46   // 46 55 58 72 74 81 // long siss
-#define VS1003_D_HITOM    50   // 48 50
-#define VS1003_D_LOTOM    45   // 41 43 45 47
-#define VS1003_D_CRASH    57   // 49 57
-#define VS1003_D_RIDE     51   // 34 51 52 53 59
-#define VS1003_D_TAMB     54   // 39 54
-#define VS1003_D_HICONGA  62   // 60 62 65 78
-#define VS1003_D_LOCONGA  64   // 61 63 64 66 79
-#define VS1003_D_MARACAS  70   // 27 29 30 69 70 73 82 
-#define VS1003_D_CLAVES   75   // 28 31 32 33 37 56 67 68 75 76 77 83 84 85
-
-int kits[KIT][13] = {
-  { 42, 36, 38, 42, 38, 28, 42, 31, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
-  { 35, 40, 42, 46, 35, 40, 42, 38, 42, 38, 64, 37, 42 }, // not bad
-  { 36, 40, 36, 42, 42, 40, 40, 70, 46, 36, 28, 70, 37 }, // not bad
-  { 35, 38, 42, 40, 35, 42, 70, 42, 46, 70, 46, 35, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
-  { 35, 38, 28, 40, 36, 46, 35, 42, 46, 38, 37, 63, 42 }, // little more on the snare side/ HH, lo conga, one clave hit
-  { 46, 38, 40, 42, 27, 58, 42, 46, 44, 70, 28, 37, 64 }, // clicks snare side stick maracas
-  { 44, 28, 42, 44, 28, 42, 38, 27, 44, 46, 44, 46, 85 }, // clicks, hh, castenets
-  { 27, 28, 58, 28, 31, 31, 33, 34, 69, 28, 77, 31, 28 },
-  { 73, 70, 31, 69, 70, 42, 82, 46, 28, 27, 69, 31, 28 },
-}; // Bass, Snare, HHO, HHC
+// buffer for GM names display
+char buffer[32];
+#include "GMnames.h"
 
 int kit = 0;
 
@@ -205,7 +181,7 @@ unsigned int stepNum = 0; // 0 to 192 (max two bars of 8 beats, aka 192 pulses)
 unsigned int numSteps = 32; // number of steps used - dependent on time signature
 bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE THIS LATER)
 
-
+byte mode = 0; // 0 is drummer, 1 is synth.
 
 
 void setup() {
@@ -235,7 +211,7 @@ void setup() {
     }
     while (1);
   }
-  
+
   // Set volume
   vsmidi.setMasterVolume(0x00, 0x00);
   // setup display
@@ -256,10 +232,6 @@ void setup() {
   repeats = map(KitPot.value(), 0, 1023, 0, 32);
   numberOfFills = map(FillsPot.value(), 0, 1023, 1, 32);
   tempo =  map(TempoPot.value(), 0, 1023, 60, 240);
-
-
-
-
 
 
   // try set second kit.
@@ -285,10 +257,47 @@ void loop() {
     tickCounter = 0;
   }
 
+  // encoder has to be read in main loop.
+  long newPos = myEnc.read() / 4;
+  
+  if (mode == 0) {
+    drummerLoop();
+    
+    if (newPos != kit && newPos > -1 && newPos < 9) {
+      kit = newPos;
+      if (debug) {
+        Serial.print("kit: ");
+        Serial.println(kit);
+      }
+      uiUpdate = true;
+    }
+    
+  } else {
+  
+    synthLoop() ;
+    long newPos = myEnc.read() / 4;
+    if (newPos != instrument && newPos > -1 && newPos < 128) {
+      instrument = newPos;
+      vsmidi.sendMIDI(0xC0 | 0, instrument, 0);
+      synthDisplayUpdate();
+    }
 
+  }
+
+
+  btn_one.update();
+  read_buttons();
+
+}
+
+// END main loop
+
+
+
+// LOOP drummer mode
+void drummerLoop() {
 
   msPerPulse = 2500.0 / tempo ; // 20.833 ms per beat at 4/4 120BPM
-
   unsigned long timenow = millis();
   if (timenow >= nexttick) {
     //nexttick = sync + millis();
@@ -347,75 +356,59 @@ void loop() {
     // generate the current step 0/1, increment counter
     doStep();
     clkCounter++;
-
   }
-
 
   // Check controls every 1/10 second adc readings.
   if (fourMilliCounter > 5) {
-    fourMilliCounter = 0; 
-    
-    int pot0 = map(KitPot.value(), 0, 1023, 0, 31);
-    if (pot0 != repeats) {
-      repeats = pot0;
-      currentRepeat = 0;
-      if (debug) {
-        Serial.print ("Repeats: ");
-        Serial.println ( repeats);
-      }
-      uiUpdate = true;
-    }
-        int pot3 = map(FillsPot.value(), 0, 1023, 1, 32);
-    if (pot3 != numberOfFills) {
-      numberOfFills = pot3;  // Number of fills 4-16
-      // reset repeats
-      if (debug) {
-        Serial.print ("Fills: ");
-        Serial.println(numberOfFills);
-      }
-      currentRepeat = 0;
-      clkCounter = 0;
-      generateSequence(numberOfFills, 32);
-      uiUpdate = true;
-
-    }
-    int pot1 = map(TempoPot.value(), 0, 1023, 60, 240);
-    if (pot1 != tempo) {
-      tempo = pot1;  // Tempo range is 20 to 275.
-      currentRepeat = 0;
-      clkCounter = 0;
-      if (debug) {
-        Serial.print ("Tempo: ");
-        Serial.println ( tempo);
-      }
-      uiUpdate = true;
-    }
-
-  }
-
-  long newPos = myEnc.read() / 4;
-  if (newPos != kit && newPos > -1 && newPos < 9) {
-    kit = newPos;
-    if (debug) {
-      Serial.print("kit: ");
-      Serial.println(kit);
-    }
-    uiUpdate = true;
+    fourMilliCounter = 0;
+    adc();
   }
 
   if (uiUpdate) {
-    displayUpdate();
+    drumsDisplayUpdate();
     uiUpdate = false;
   }
 
-  btn_one.update();
-  read_buttons();
-
 }
-// END main loop
+// END drummer loop
+
+// LOOP synth
+
+void synthLoop() {
+  // put your main code here, to run repeatedly:
+  // Read instrument name from PROGMEM
+
+  const char* instrumentName = (const char*)pgm_read_ptr(&gmInstruments[instrument - 1]);
+  strncpy_P(buffer, instrumentName, sizeof(buffer) - 1);
+  buffer[sizeof(buffer) - 1] = '\0';
+
+  // If we have MIDI data then forward it on.
+  // Based on the DualMerger.ino example from the MIDI library.
+  //
+  if (MIDI.read()) {
+    // Extract the channel and type to build the command to pass on
+    // Recall MIDI channels are in the range 1 to 16, but will be
+    // encoded as 0 to 15.
+    //
+    // All commands in the range 0x80 to 0xE0 support a channel.
+    // Any command 0xF0 or above do not (they are system messages).
+    //
+    byte ch = MIDI.getChannel();
+    uint16_t ch_filter = 1 << (ch - 1); // bit numbers are 0 to 15; channels are 1 to 16
+    if (ch == 0) ch_filter = 0xffff; // special case - always pass system messages where ch==0
+    if (MIDI_CHANNEL_FILTER & ch_filter) {
+      byte cmd = MIDI.getType();
+      if ((cmd >= 0x80) && (cmd <= 0xE0)) {
+        // Merge in the channel number
+        cmd |= (ch - 1);
+      }
+      vsmidi.sendMIDI(cmd, MIDI.getData1(), MIDI.getData2());
+    }
+  }
+}
+// END synth loop
 
 void read_buttons() {
-
   bool doublePressMode = false;
   // if button one was held for more than 75 millis
   /*
@@ -427,12 +420,64 @@ void read_buttons() {
   if (!doublePressMode) {
     // being tripple shure :)
     if (btn_one.pressed() ) {
-      generateRandomSequence(numberOfFills, 32);
+      mode = !mode;
+      //generateRandomSequence(numberOfFills, 32);
+      if (mode == 1) {
+        vsmidi.allNotesOff();
+        // start input
+        MIDI.begin(MIDI_CHANNEL_OMNI);
+        const char* instrumentName = (const char*)pgm_read_ptr(&gmInstruments[0]);
+        strncpy_P(buffer, instrumentName, sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = '\0';
+        synthDisplayUpdate();
+      } else {
+        //MIDI.stop();
+        vsmidi.allNotesOff();
+      }
     }
 
   }
 }
 
+// read pots
+void adc() {
+
+  int pot0 = map(KitPot.value(), 0, 1023, 0, 31);
+  if (pot0 != repeats) {
+    repeats = pot0;
+    currentRepeat = 0;
+    if (debug) {
+      Serial.print ("Repeats: ");
+      Serial.println ( repeats);
+    }
+    uiUpdate = true;
+  }
+  int pot3 = map(FillsPot.value(), 0, 1023, 1, 32);
+  if (pot3 != numberOfFills) {
+    numberOfFills = pot3;  // Number of fills 4-16
+    // reset repeats
+    if (debug) {
+      Serial.print ("Fills: ");
+      Serial.println(numberOfFills);
+    }
+    currentRepeat = 0;
+    clkCounter = 0;
+    generateSequence(numberOfFills, 32);
+    uiUpdate = true;
+
+  }
+  int pot1 = map(TempoPot.value(), 0, 1023, 60, 240);
+  if (pot1 != tempo) {
+    tempo = pot1;  // Tempo range is 20 to 275.
+    currentRepeat = 0;
+    clkCounter = 0;
+    if (debug) {
+      Serial.print ("Tempo: ");
+      Serial.println ( tempo);
+    }
+    uiUpdate = true;
+  }
+}
 
 /**** Euclidean rythm algos ****/
 

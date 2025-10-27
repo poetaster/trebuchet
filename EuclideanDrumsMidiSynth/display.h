@@ -21,7 +21,7 @@ void int_to_char(int num, char *result) {
 }
 
 // general display update
-void displayUpdate() {
+void drumsDisplayUpdate() {
   int i, x, y;
   oledFill(&ssoled, 0, 1);
 
@@ -46,7 +46,23 @@ void displayUpdate() {
   oledWriteString(&ssoled, 0, 72, 6, reps, FONT_STRETCHED, 0, 1);
 
 }
+// general display update
+void synthDisplayUpdate() {
+  int i, x, y;
+  oledFill(&ssoled, 0, 1);
 
+  int offset = 0;
+  char * pch;
+  //printf ("Splitting string \"%s\" into tokens:\n",str);
+  pch = strtok (buffer," -");
+  while (pch != NULL)
+  {
+    oledWriteString(&ssoled, 0, 0, offset, (char *)pch, FONT_STRETCHED, 0, 1);
+    //printf ("%s\n",pch);
+    offset = offset + 3;
+    pch = strtok (NULL, " ,.-");
+  }
+}
 
 // setup function, oled
 void displaySetup() {
