@@ -22,6 +22,11 @@ using namespace std;
 #include <Wire.h>
 #include <MIDI.h>
 
+#include "pots.h"
+// POTs to control which set of drums and tempo
+CS_Pot KitPot (A2, 20);
+CS_Pot TempoPot (A0, 20);
+CS_Pot FillsPot (A1, 20);
 
 // button inputs
 #define SW1 2
@@ -55,12 +60,12 @@ SSOLED ssoled;
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
-bool debug = true;
+bool debug = false;
 
 // init encoder, are on 3, 4 button on 2
 // this lib does accel and counts multiple clicks.
 
-//#define ENCODER_DO_NOT_USE_INTERRUPTS
+#define ENCODER_DO_NOT_USE_INTERRUPTS
 #include <Encoder.h>
 Encoder myEnc(4, 3);
 
@@ -103,8 +108,8 @@ uint8_t numberOfrepeats = 0;
 // This code supports several variants of the VS10xx based shields.
 // Choose the apprppriate one here (and comment out the others).
 //
-#define VS1053_MP3_SHIELD 1
-//#define VS1003_MODULE 1
+//#define VS1053_MP3_SHIELD 1
+#define VS1003_MODULE 1
 
 #ifdef VS1003_MODULE
 extern "C" {
@@ -148,8 +153,8 @@ uint16_t MIDI_CHANNEL_FILTER = 0b1111111111111111;
 #ifdef VS1003_MODULE
 // VS1003 Module pin definitions
 #define VS_XCS    9 //8 // Control Chip Select Pin (for accessing SPI Control/Status registers)
-#define VS_XDCS   6 // 9 // Data Chip Select / BSYNC Pin
-#define VS_DREQ   7 // Data Request Pin: Player asks for more data
+#define VS_XDCS   7 // 9 // Data Chip Select / BSYNC Pin
+#define VS_DREQ   6 // Data Request Pin: Player asks for more data
 #define VS_RESET  8 // 10 // Reset is active low
 #endif
 // VS10xx SPI pin connections (both boards)
@@ -205,7 +210,7 @@ byte preset_instruments[16] = {
 // This is required to set up the MIDI library.
 // The default MIDI setup uses the built-in serial port.
 //MIDI_CREATE_DEFAULT_INSTANCE();
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
+//MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
 
 // Defaults, but will be overridden by POT settings if enabled
 uint16_t volume = 0;
@@ -234,9 +239,9 @@ char teststr[32];
 #define VS1003_D_CLAVES   75   // 28 31 32 33 37 56 67 68 75 76 77 83 84 85
 
 int kits[KIT][13] = {
-  { 42, 36, 38, 42, 38, 28, 42, 31, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
-  { 35, 40, 42, 46, 35, 40, 42, 38, 42, 38, 64, 37, 42 }, // not bad
-  { 36, 40, 36, 42, 42, 40, 40, 70, 46, 36, 28, 70, 37 }, // not bad
+  { 42, 79, 38, 42, 69, 27, 42, 38, 46, 35, 26, 79, 38 }, // clicks, side stick, snare bass
+  { 35, 60, 42, 46, 36, 61, 42, 38, 42, 38, 61, 46, 44 }, // not bad
+  { 36, 40, 35, 71, 42, 46, 42, 60, 46, 36, 69, 27, 61 }, // not bad
   { 35, 38, 42, 40, 35, 42, 70, 42, 46, 70, 46, 35, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
   { 35, 38, 28, 40, 36, 46, 35, 42, 46, 38, 37, 63, 42 }, // little more on the snare side/ HH, lo conga, one clave hit
   { 46, 38, 40, 42, 27, 58, 42, 46, 44, 70, 28, 37, 64 }, // clicks snare side stick maracas
@@ -367,13 +372,7 @@ void displaySetup() {
 }
 
 void setup() {
-
-  if (debug == false) {
-    //blows up sigh
-    //MIDI.begin(MIDI_CHANNEL_OMNI);//MIDI_CHANNEL_OMNI);
-  } else {
-    Serial.begin(57600);
-  }
+ Serial.begin(57600);
 
   displaySetup();
 
@@ -385,15 +384,19 @@ void setup() {
   btn_one.interval(5);
   btn_one.setPressedState(LOW);
   
-  // initialize from current pot positoins
-  repeats = map(analogRead(POT_KIT), 0, 1023, 0, 32);
-  numberOfFills = map(analogRead(POT_FILLS), 0, 1023, 1, 32);
-  tempo =  map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
 
-
-
+  //setup pot objects
+  KitPot.begin();
+  TempoPot.begin();
+  FillsPot.begin();
   delay(200);
 
+
+  // initialize from current pot positoins
+  repeats = map(KitPot.value(), 0, 1023, 0, 32);
+  numberOfFills = map(FillsPot.value(), 0, 1023, 1, 32);
+  tempo =  map(TempoPot.value(), 0, 1023, 60, 240);
+  
   // Configure the instruments for all required MIDI channels.
   // Even though MIDI channels are 1 to 16, all the code here
   // is working on 0 to 15 (bitshifts, index into array, MIDI command).
@@ -428,10 +431,16 @@ void setup() {
 #ifdef POT_VOL
   volume = -1;
 #endif
-
+/*
+  for (byte i = 25; i < 100; i++) {
+    talkMIDI (0x99, i, 120);
+    Serial.println(i);
+    delay(800);
+  }*/
 
   /**** set up Euclidean sequences ****/
   generateSequence(numberOfFills, 32);
+  
 }
 
 
@@ -449,7 +458,45 @@ unsigned long synctick;
 unsigned long synctick2;
 unsigned long sync;
 
+// read pots
+void adc() {
 
+  int pot0 = map(KitPot.value(), 0, 1023, 0, 31);
+  if (pot0 != repeats) {
+    repeats = pot0;
+    currentRepeat = 0;
+    if (debug) {
+      Serial.print ("Repeats: ");
+      Serial.println ( repeats);
+    }
+    uiUpdate = true;
+  }
+  int pot3 = map(FillsPot.value(), 0, 1023, 1, 32);
+  if (pot3 != numberOfFills) {
+    numberOfFills = pot3;  // Number of fills 4-16
+    // reset repeats
+    if (debug) {
+      Serial.print ("Fills: ");
+      Serial.println(numberOfFills);
+    }
+    currentRepeat = 0;
+    clkCounter = 0;
+    generateSequence(numberOfFills, 32);
+    uiUpdate = true;
+
+  }
+  int pot1 = map(TempoPot.value(), 0, 1023, 60, 240);
+  if (pot1 != tempo) {
+    tempo = pot1;  // Tempo range is 20 to 275.
+    currentRepeat = 0;
+    clkCounter = 0;
+    if (debug) {
+      Serial.print ("Tempo: ");
+      Serial.println ( tempo);
+    }
+    uiUpdate = true;
+  }
+}
 
 
 // main loop
@@ -460,6 +507,7 @@ void loop() {
 
   unsigned long timenow = millis();
   if (timenow >= nexttick) {
+    
     //nexttick = sync + millis();
     // we use a multiplier of parts of fill in 32 steps.
     // this should be adjustable
@@ -493,15 +541,18 @@ void loop() {
       //Serial.println(getStepNumber());
       int rr = random(13); // should use length of [kit]
       int note = kits[kit][rr];
+      
       //if (debug) Serial.println ( note);
 
       // we're addding a bit of randomness to velocity
-      int vel = 127 - random(70);
+      int vel = 127 - random(40);
       if (note == 75 || note == 57) {
         vel = 90 ;
       }
       talkMIDI (0x99, note, vel);
-
+      
+      //if (debug) Serial.println(note);
+      
       //swing a bit but not too much
       if (swing) {
         delay (random(3));
@@ -510,90 +561,21 @@ void loop() {
 
       //talkMIDI (0x89, note, 0);
       //delay (50);
+      
     }
     // generate the current step 0/1, increment counter
     doStep();
     clkCounter++;
+    adc(); // collect on the pots
 
   }
-
-  if (loopstate == 0) {
-    // Read the potentiometer for a value between 0 and 127
-    // to use to select the instrument in the general MIDI bank
-    // for POT_MIDI_CHANNEL (if POT_MIDI is defined).
-
-#ifdef POT_KIT
-    int pot0 = map(analogRead(POT_KIT), 0, 1023, 0, 31);
-    if (pot0 != repeats) {
-      repeats = pot0;
-      currentRepeat = 0;
-      if (debug) {
-        Serial.print ("Repeats: ");
-        Serial.println ( repeats);
-      }
-      uiUpdate = true;
-
-
-    }
-#endif // POT_KIT
-
-#ifdef POT_FILLS
-    int pot3 = map(analogRead(POT_FILLS), 0, 1023, 1, 32);
-    if (pot3 != numberOfFills) {
-      numberOfFills = pot3;  // Number of fills 4-16
-      // reset repeats
-      if (debug) {
-        Serial.print ("Fills: ");
-        Serial.println(numberOfFills);
-      }
-      currentRepeat = 0;
-      clkCounter = 0;
-      generateSequence(numberOfFills, 32);
-      uiUpdate = true;
-
-    }
-#endif // POT_FILLS
-  }
-
-  else if (loopstate == 1) {
-
-#ifdef POT_TEMPO
-    int pot1 = map(analogRead(POT_TEMPO), 0, 1023, 60, 240);
-    if (pot1 != tempo) {
-      tempo = pot1;  // Tempo range is 20 to 275.
-      currentRepeat = 0;
-      clkCounter = 0;
-      if (debug) {
-        Serial.print ("Tempo: ");
-        Serial.println ( tempo);
-      }
-      uiUpdate = true;
-
-
-    }
-#endif // POT_TEMPO
-
-  }
-  else if (loopstate == 2) {
-
-#ifdef POT_REPEATS
-    int pot2 = map(analogRead(POT_REPEATS), 0, 1023, 0, 33);
-    if (pot2 != repeats) {
-      //repeats = pot2;  // 0 to 32 repeats
-      currentRepeat = 0;
-      clkCounter = 0;
-      if (debug) {
-        Serial.print ("Repeats: ");
-        Serial.println ( repeats);
-      }
-      uiUpdate = true;
-
-    }
-#endif // POT_REPEATS
-
-  }
+  
+ 
   long newPos = myEnc.read() / 4;
-  if (newPos != kit && newPos > -1 && newPos < 9) {
+  newPos = constrain(newPos, 0, 8);
+  if (newPos > 3) myEnc.readAndReset();
+  
+  if (newPos != kit) {
     kit = newPos;
     if (debug) {
       Serial.print("kit: ");
@@ -602,17 +584,14 @@ void loop() {
     uiUpdate = true;
   }
 
-  loopstate++;
-  if (loopstate > 2) loopstate = 0;
-
   if (uiUpdate) {
-
     displayUpdate();
     uiUpdate = false;
   }
 
   btn_one.update();
   read_buttons();
+  delay(random(4));
 
 }
 // END main loop

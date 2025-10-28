@@ -186,12 +186,9 @@ byte mode = 0; // 0 is drummer, 1 is synth.
 
 void setup() {
 
-  if (debug == false) {
-    //blows up sigh
-    //MIDI.begin(MIDI_CHANNEL_OMNI);//MIDI_CHANNEL_OMNI);
-  } else {
-    Serial.begin(57600);
-  }
+
+  Serial.begin(57600);
+
   // Initialize SPI
   SPI.begin();
   SPI.setClockDivider(SPI_CLOCK_DIV16);
@@ -247,6 +244,8 @@ void setup() {
   generateSequence(numberOfFills, 32);
 }
 
+int oldKit;
+int oldInst;
 
 // main loop
 void loop() {
@@ -263,7 +262,9 @@ void loop() {
   if (mode == 0) {
     drummerLoop();
     
-    if (newPos != kit && newPos > -1 && newPos < 9) {
+    if (newPos != kit) {
+      if (newPos < 0) newPos = 9;
+      if (newPos > 8) newPos = 0;
       kit = newPos;
       if (debug) {
         Serial.print("kit: ");
@@ -276,7 +277,9 @@ void loop() {
   
     synthLoop() ;
     long newPos = myEnc.read() / 4;
-    if (newPos != instrument && newPos > -1 && newPos < 128) {
+    if ( newPos != instrument) {
+      if (newPos < 0) newPos = 100;
+      if (newPos > 100) newPos = 0;
       instrument = newPos;
       vsmidi.sendMIDI(0xC0 | 0, instrument, 0);
       synthDisplayUpdate();
@@ -423,15 +426,27 @@ void read_buttons() {
       mode = !mode;
       //generateRandomSequence(numberOfFills, 32);
       if (mode == 1) {
+        // first save kit value
+        oldKit = kit;
+        instrument = oldInst;
         vsmidi.allNotesOff();
+        
+        myEnc.write(oldInst);
+        
         // start input
         MIDI.begin(MIDI_CHANNEL_OMNI);
+
+        // update display
         const char* instrumentName = (const char*)pgm_read_ptr(&gmInstruments[0]);
         strncpy_P(buffer, instrumentName, sizeof(buffer) - 1);
         buffer[sizeof(buffer) - 1] = '\0';
         synthDisplayUpdate();
+        
       } else {
         //MIDI.stop();
+        kit = oldKit;
+        oldInst = instrument;
+        myEnc.write(oldKit);
         vsmidi.allNotesOff();
       }
     }

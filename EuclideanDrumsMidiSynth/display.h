@@ -82,8 +82,9 @@ void displaySetup() {
     };
 
     oledFill(&ssoled, 0, 1);
-    oledWriteString(&ssoled, 0, 0, 0, (char *)"TrEbUcHeT", FONT_STRETCHED, 0, 1);
-    oledWriteString(&ssoled, 0, 10, 2, msgs[rc], FONT_NORMAL, 0, 1);
+    oledWriteString(&ssoled, 0, 16, 2, (char *)"treBu", FONT_STRETCHED, 0, 1);
+    oledWriteString(&ssoled, 0, 24, 4, (char *)"cHet", FONT_STRETCHED, 0, 1);
+    //oledWriteString(&ssoled, 0, 10, 4, msgs[rc], FONT_NORMAL, 0, 1);
 
     haveDisplay = true;
     delay(1000);
