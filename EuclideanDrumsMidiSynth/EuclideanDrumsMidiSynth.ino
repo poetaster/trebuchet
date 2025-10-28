@@ -262,9 +262,7 @@ void loop() {
   if (mode == 0) {
     drummerLoop();
     
-    if (newPos != kit) {
-      if (newPos < 0) newPos = 9;
-      if (newPos > 8) newPos = 0;
+    if (newPos != kit && newPos > -1 && newPos < 9) {
       kit = newPos;
       if (debug) {
         Serial.print("kit: ");
@@ -277,9 +275,7 @@ void loop() {
   
     synthLoop() ;
     long newPos = myEnc.read() / 4;
-    if ( newPos != instrument) {
-      if (newPos < 0) newPos = 100;
-      if (newPos > 100) newPos = 0;
+    if ( newPos != instrument && newPos > -1 && newPos < 101) {
       instrument = newPos;
       vsmidi.sendMIDI(0xC0 | 0, instrument, 0);
       synthDisplayUpdate();
@@ -339,7 +335,7 @@ void drummerLoop() {
       //if (debug) Serial.println ( note);
 
       // we're addding a bit of randomness to velocity
-      int vel = 127 - random(70);
+      int vel = 127 - random(55);
       if (note == 75 || note == 57) {
         vel = 90 ;
       }

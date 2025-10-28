@@ -16,12 +16,12 @@
 
 int kits[KIT][13] = {
   { 42, 36, 38, 42, 38, 28, 42, 31, 46, 35, 38, 46, 38 }, // clicks, side stick, snare bass
-  { 35, 40, 42, 46, 35, 40, 42, 38, 42, 38, 64, 37, 42 }, // not bad
+  { 35, 40, 62, 46, 35, 40, 42, 38, 62, 38, 64, 37, 42 }, // not bad
   { 36, 40, 36, 42, 42, 40, 40, 70, 46, 36, 28, 70, 37 }, // not bad
-  { 35, 38, 42, 40, 35, 42, 70, 42, 46, 70, 46, 35, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
+  { 35, 38, 42, 40, 35, 64, 70, 63, 46, 70, 46, 35, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
   { 35, 38, 28, 40, 36, 46, 35, 42, 46, 38, 37, 63, 42 }, // little more on the snare side/ HH, lo conga, one clave hit
-  { 46, 38, 40, 42, 27, 58, 42, 46, 44, 70, 28, 37, 64 }, // clicks snare side stick maracas
-  { 44, 28, 42, 44, 28, 42, 38, 27, 44, 46, 44, 46, 85 }, // clicks, hh, castenets
-  { 27, 28, 58, 28, 31, 31, 33, 34, 69, 28, 77, 31, 28 },
+  { 46, 38, 40, 42, 27, 31, 42, 46, 44, 70, 28, 37, 64 }, // clicks snare side stick maracas
+  { 44, 28, 42, 85, 28, 70, 38, 27, 74, 42, 38, 46, 85 }, // clicks, hh, castenets
+  { 27, 28, 58, 28, 31, 76, 33, 34, 69, 28, 77, 31, 28 },
   { 73, 70, 31, 69, 70, 42, 82, 46, 28, 27, 69, 31, 28 },
 }; // Bass, Snare, HHO, HHC
