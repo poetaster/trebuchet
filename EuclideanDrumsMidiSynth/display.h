@@ -2,16 +2,23 @@
 bool uiUpdate = false;
 bool haveDisplay = false;
 
+void ReplaceCharactersInString(char *pcString, char cOldChar,char cNewChar){
+    while ( pcString && *pcString) {//not NULL and not zero
+        if ( *pcString == cOldChar) {//match
+            *pcString = cNewChar;//replace
+        }
+        ++pcString;//advance to next character
+    }
+}
+
 // util int to char array
 void int_to_char(int num, char *result) {
   int temp = num;
   int len = 0;
-
   while (temp > 0) {
     len++;
     temp /= 10;
   }
-
   for (int i = len - 1; i >= 0; i--) {
     result[i] = num % 10 + '0';
     num /= 10;
@@ -25,27 +32,44 @@ void drumsDisplayUpdate() {
   int i, x, y;
   oledFill(&ssoled, 0, 1);
 
-  char result[100];
+  char result[16];
   int_to_char(tempo, result);
-  oledWriteString(&ssoled, 0, 0, 0, (char *)"BPM ", FONT_STRETCHED, 0, 1);
-  oledWriteString(&ssoled, 0, 58, 0, result, FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 0, 0, (char *)"T ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 24, 0, result, FONT_STRETCHED, 0, 1);
 
-  char kits[100];
+  char kits[16];
   int_to_char(kit + 1, kits);
-  oledWriteString(&ssoled, 0, 0, 3, (char *)"K", FONT_STRETCHED, 0, 1);
-  oledWriteString(&ssoled, 0, 24, 3, kits, FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 84, 0, (char *)"K", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 100, 0, kits, FONT_STRETCHED, 0, 1);
 
-  char fills[100];
-  int_to_char(numberOfFills, fills);
-  oledWriteString(&ssoled, 0, 56, 3, (char *)"FLS ", FONT_STRETCHED, 0, 1);
-  oledWriteString(&ssoled, 0, 96, 3, fills, FONT_STRETCHED, 0, 1);
+  char fills[16];
+  int_to_char(seq[current_track].fills, fills);
+  oledWriteString(&ssoled, 0, 0, 3, (char *)"F ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 24, 3, fills, FONT_STRETCHED, 0, 1);
 
-  char reps[100];
-  int_to_char(repeats, reps);
-  oledWriteString(&ssoled, 0, 0, 6, (char *)"REP", FONT_STRETCHED, 0, 1);
-  oledWriteString(&ssoled, 0, 72, 6, reps, FONT_STRETCHED, 0, 1);
+  char reps[16];
+  int_to_char(seq[current_track].repeats, reps);
+  oledWriteString(&ssoled, 0, 64, 3, (char *)"R ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 96, 3, reps, FONT_STRETCHED, 0, 1);
+
+  char text[16];
+  int_to_char(current_track+1, text);
+  //ReplaceCharactersInString ( text, '0', '.');
+  oledWriteString(&ssoled, 0, 0, 6, seq[current_track].trigger->textSequence, FONT_SMALL, 0, 1);
+  oledWriteString(&ssoled, 0, 112, 6, text, FONT_STRETCHED, 0, 1);
+  
 
 }
+
+void displayPattern() {
+  // textSequence is the var which holds the euclidean
+  //char kits[32];
+  //int_to_char(text, kits);
+  oledFill(&ssoled, 0, 1);  
+  ReplaceCharactersInString ( textSequence, '0', '.');
+  oledWriteString(&ssoled, 0, 0, 4, textSequence, FONT_SMALL, 0, 1);
+}
+
 // general display update
 void synthDisplayUpdate() {
   int i, x, y;

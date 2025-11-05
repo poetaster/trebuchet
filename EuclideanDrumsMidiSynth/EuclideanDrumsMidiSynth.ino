@@ -49,29 +49,49 @@ SSOLED ssoled;
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
 
-bool debug = false;
+bool debug = true;
 
 // init encoder, are on 3, 4 button on 2
 // this lib does accel and counts multiple clicks.
 
 //#define ENCODER_DO_NOT_USE_INTERRUPTS
+//#define INPUT_PULLUP 1
 #include <Encoder.h>
 Encoder myEnc(4, 3);
 
 // the pattern generator
 //euclid euc;
-// move back to object ASAP
-#include "euclid.h"
 
-#define NUMBER_OF_STEPS 32
+#define NTRACKS 3
+#include "euclid.h"
+int current_track = 0;
+String display_pat;
+bool read_lock = false;
+bool encoder_select = false; // used to select fills or offset for encoder setting
+
+struct sequencer {
+  public: euclid *trigger;  // euclid object to manage hits and patterns from bastl
+    uint16_t fills;   // how many hits in 16
+    uint16_t repeats;   // set in euclid doStep for now, how often to repeat pattern before new
+    bool  returned;  // not used, see euclid doStep
+    int16_t index;    // index of step we are on
+};
+
+sequencer seq[NTRACKS] = {
+  new euclid(), 4, 0, 0, NUMBER_OF_STEPS - 1, // step index
+  new euclid(), 5, 0, 0, NUMBER_OF_STEPS - 1, // step index
+  new euclid(), 6, 1, 0, NUMBER_OF_STEPS - 1, // step index
+};
+
+
 
 // Euclidean sequences
-bool euclidianPattern[NUMBER_OF_STEPS + 1];
+bool euclidianPattern[NUMBER_OF_STEPS];
 uint8_t stepCounter;
 uint8_t numberOfSteps;
 uint8_t numberOfFills = 6;
 uint8_t numberOfrepeats = 0;
-
+char textSequence[NUMBER_OF_STEPS + 1];
 
 
 // Use binary to say which MIDI channels this should respond to.
@@ -82,23 +102,16 @@ uint8_t numberOfrepeats = 0;
 //                               |   |   |   |  |
 uint16_t MIDI_CHANNEL_FILTER = 0b1111111111111111;
 
-// Comment out any of these if not in use
-//#define POT_MIDI  A0 // MIDI control
-//#define POT_VOL   A3 // Volume control
 
 #include "pots.h"
 // POTs to control which set of drums and tempo
-CS_Pot KitPot (A2, 20);
+
 CS_Pot TempoPot (A0, 20);
-CS_Pot FillsPot (A1, 20);
-
-//#define POT_REPEATS A3
-
+CS_Pot FillsPot (A2, 20);
+CS_Pot KitPot (A1, 20);
 
 
 
-// Channel to link to the potentiometer (1 to 16)
-#define POT_MIDI_CHANNEL 10
 
 // VS1053 Shield pin definitions
 #define VS_MOSI   11
@@ -136,8 +149,12 @@ int kit = 0;
 
 
 
+
 // Globals, clean up!
 
+// last time btn_one release, used to toggle settings in modes
+unsigned long btnOneLastTime;
+bool timeSigMode = false;
 
 volatile byte tickCounter;               // Counts interrupt "ticks". Reset every 125
 volatile byte fourMilliCounter;          // Counter incremented every 4ms
@@ -149,22 +166,10 @@ uint16_t tempo  = 60;
 byte instrument;
 
 uint8_t steps, fills, lastSteps, lastFills, repeats ;
-uint8_t currentRepeat = 0;
-bool bState1, bState2;
 bool swing = 0;
-uint8_t clkCounter = 0;
-uint8_t instrs;
-uint8_t timings;
-int loopstate;
 unsigned long nexttick;
 
 // tempo variables
-float tapTimes[4];
-byte nextTapIndex = 0;
-byte paramTimeSignature = 64; // 1 to 13 (3/4, 4/4, 5/4, 6/4, 7/4)
-float paramTempo = 80;
-byte paramSwing = 0; // 0 to 2 (0=straight, 1=approx quintuplet swing, 2=triplet swing)
-
 int syncTicks = 0;
 unsigned long synctick;
 unsigned long synctick2;
@@ -178,7 +183,7 @@ float nextPulseTime = 0.0; // the time, in milliseconds, of the next pulse
 float msPerPulse = 20.8333; // time for one "pulse" (there are 24 pulses per quarter note, as defined in MIDI spec)
 byte pulseNum = 0; // 0 to 23 (24ppqn, pulses per quarter note)
 unsigned int stepNum = 0; // 0 to 192 (max two bars of 8 beats, aka 192 pulses)
-unsigned int numSteps = 32; // number of steps used - dependent on time signature
+unsigned int numSteps = 16; // number of steps used - dependent on time signature
 bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE THIS LATER)
 
 byte mode = 0; // 0 is drummer, 1 is synth.
@@ -226,10 +231,10 @@ void setup() {
   delay(200);
 
   // initialize from current pot positoins
-  repeats = map(KitPot.value(), 0, 1023, 0, 32);
-  numberOfFills = map(FillsPot.value(), 0, 1023, 1, 32);
+  repeats = map(KitPot.value(), 0, 1023, 0, 16);
+  numberOfFills = map(FillsPot.value(), 0, 1023, 1, 16);
   tempo =  map(TempoPot.value(), 0, 1023, 60, 240);
-
+  randomSeed(analogRead(0));
 
   // try set second kit.
   //htalkMIDI(0x00,0xb0,0x7f);
@@ -241,11 +246,17 @@ void setup() {
   vsmidi.sendMIDI(0x80, 0, 0);
 
   /**** set up Euclidean sequences ****/
-  generateSequence(numberOfFills, 32);
+  //generateSequence(numberOfFills, 16);
+
+  seq[0].trigger->generateSequence(4, 16);
+  seq[1].trigger->generateSequence(5, 16);
+  seq[2].trigger->generateSequence(6, 16);
 }
 
 int oldKit;
 int oldInst;
+int oldPos = 0;
+int delta = 0;
 
 // main loop
 void loop() {
@@ -257,22 +268,47 @@ void loop() {
   }
 
   // encoder has to be read in main loop.
-  long newPos = myEnc.read() / 4;
-  
+  int newPos = myEnc.read() / 4;
+  if (newPos > oldPos) {
+    delta = 1;
+    oldPos = newPos;
+  } else if (newPos < oldPos) {
+    delta = -1;
+    oldPos = newPos;
+  } else {
+    delta = 0;
+  }
+  //if (debug) Serial.println(newPos);
+
   if (mode == 0) {
     drummerLoop();
-    
-    if (newPos != kit && newPos > -1 && newPos < 9) {
-      kit = newPos;
-      if (debug) {
-        Serial.print("kit: ");
-        Serial.println(kit);
+
+    if (encoder_select == false) {
+      int fills = seq[current_track].fills;
+      if (delta != 0) {
+        fills = constrain( (fills + delta), 1, 16);
+        seq[current_track].fills = fills;
+        seq[current_track].trigger->generateSequence(fills, 16);
+        uiUpdate = true;
       }
-      uiUpdate = true;
+
+    } else if (encoder_select == true) {
+      int repeats = seq[current_track].repeats;
+      if (delta != 0  ) {
+        repeats = constrain( (repeats + delta), 0, 6);
+        seq[current_track].repeats = repeats;
+        if (repeats != 0) {
+          //rotate pattern
+          seq[current_track].trigger->rotate(repeats);
+        } else {
+          // gone to zero, so reset to base
+          seq[current_track].trigger->generateSequence(seq[current_track].fills, 16);
+        }
+        uiUpdate = true;
+      }
     }
-    
   } else {
-  
+
     synthLoop() ;
     long newPos = myEnc.read() / 4;
     if ( newPos != instrument && newPos > -1 && newPos < 101) {
@@ -283,7 +319,6 @@ void loop() {
 
   }
 
-
   btn_one.update();
   read_buttons();
 
@@ -291,70 +326,36 @@ void loop() {
 
 // END main loop
 
-
-
 // LOOP drummer mode
 void drummerLoop() {
 
-  msPerPulse = 2500.0 / tempo ; // 20.833 ms per beat at 4/4 120BPM
   unsigned long timenow = millis();
   if (timenow >= nexttick) {
-    //nexttick = sync + millis();
-    // we use a multiplier of parts of fill in 32 steps.
-    // this should be adjustable
+    //nexttick = millis() + (unsigned long)(1000 / (tempo / 60) ) / 24;
+    nexttick = millis() + (unsigned long)(60000 / tempo ) / 4; // 12 for triplets or 4 for 1/4 16th
 
-    nexttick = millis() + (unsigned long)(1000 / (tempo / 60) ) / 24;
-    //nexttick = nexttick + msPerPulse;
+    for (uint8_t track = 0; track < NTRACKS; ++track) { // note that triggers are stored MSB first
+      if ( seq[track].trigger->getCurrentStep() ) {
 
-    //Serial.println(nexttick);
-    // check if we've hit the end of a 32 step pattern
-    // if so, new pattern. reset counter.
+        //  { 35, 36, 35, 38, 40, 38, 46, 28, 42, 46, 31 }, kits are 3s of bass section, snare section, hat section
 
-    if ( clkCounter == 32) {
-      if (currentRepeat == repeats) {
-        generateSequence(numberOfFills, 32);
-        clkCounter = 0;
-        currentRepeat = 0;
-        Serial.println("new pattern");
+        int offset = track * 3;
+        int rr = random(3) + offset; // (0,3 3,6, 6, 9)
+        int note = kits[kit][rr];
+
+        // we're addding a bit of randomness to velocity
+        int vel = 127 - random(55);
+        if (note == 75 || note == 57 || note == 67 || note == 31) {
+          vel = vel - 30 ;
+        }
+        vsmidi.noteOn( 9, note, vel); // channel 9 is 10 in midi.
+      } else {
 
       }
+      seq[track].trigger->doStep(); // next step advance
+
     }
-    // set next repeat counter on pattern end
-    if (clkCounter == 32) {
-      currentRepeat++;
-      Serial.print("incr repeat: ");
-      Serial.println(currentRepeat);
-    }
-    //Serial.println(getStep(stepCounter));
 
-    // update / play sound if currentstep is on
-    if (getCurrentStep() ) {
-      //Serial.println(getStepNumber());
-      int rr = random(13); // should use length of [kit]
-      int note = kits[kit][rr];
-      //if (debug) Serial.println ( note);
-
-      // we're addding a bit of randomness to velocity
-      int vel = 127 - random(55);
-      if (note == 75 || note == 57) {
-        vel = 90 ;
-      }
-      vsmidi.noteOn( 9, note, vel); // channel 9 is 10 in midi.
-      //vsmidi.sendMIDIPacket(0x90 | 10, note, vel, true);
-      //vsmidi.sendMIDI(0x99, note, vel);
-
-      //swing a bit but not too much
-      if (swing) {
-        delay (random(3));
-        //Serial.println("swinging");
-      }
-
-      //talkMIDI (0x89, note, 0);
-      //delay (50);
-    }
-    // generate the current step 0/1, increment counter
-    doStep();
-    clkCounter++;
   }
 
   // Check controls every 1/10 second adc readings.
@@ -409,26 +410,13 @@ void synthLoop() {
 
 void read_buttons() {
   bool doublePressMode = false;
-  // if button one was held for more than 75 millis
-  /*
-    if (btn_one.rose()) {
-    btnOneLastTime = btn_one.previousDuration();
-    if (btnOneLastTime > 250 && voice_number == 1) easterEgg = !easterEgg;
-    }*/
 
-  if (!doublePressMode) {
-    // being tripple shure :)
-    if (btn_one.pressed() ) {
+  if (btn_one.rose()) {
+    int btnOneLastTime = btn_one.previousDuration();
+    if (btnOneLastTime > 500) {
       mode = !mode;
-      //generateRandomSequence(numberOfFills, 32);
       if (mode == 1) {
-        // first save kit value
-        oldKit = kit;
-        instrument = oldInst;
         vsmidi.allNotesOff();
-        
-        myEnc.write(oldInst);
-        
         // start input
         MIDI.begin(MIDI_CHANNEL_OMNI);
 
@@ -437,139 +425,43 @@ void read_buttons() {
         strncpy_P(buffer, instrumentName, sizeof(buffer) - 1);
         buffer[sizeof(buffer) - 1] = '\0';
         synthDisplayUpdate();
-        
+
       } else {
         //MIDI.stop();
-        kit = oldKit;
-        oldInst = instrument;
-        myEnc.write(oldKit);
         vsmidi.allNotesOff();
+        uiUpdate = true;
       }
     }
+  }
 
+  // if button one was held for more than 75 millis
+  //int debouncedState =  btn_one.read();
+  if (btn_one.released() && btn_one.currentDuration() < 500) {
+    encoder_select = !encoder_select;
   }
 }
 
 // read pots
 void adc() {
+  if (read_lock == false) {
 
-  int pot0 = map(KitPot.value(), 0, 1023, 0, 31);
-  if (pot0 != repeats) {
-    repeats = pot0;
-    currentRepeat = 0;
-    if (debug) {
-      Serial.print ("Repeats: ");
-      Serial.println ( repeats);
+    int pot0 = map(KitPot.value(), 5, 1014, 0, 8);
+    int pot3 = map(FillsPot.value(), 5, 1014, 0, 2);
+
+    // must ensure pots return to last value
+    if (pot0 != kit) {
+      kit = pot0;
+      uiUpdate = true;
     }
-    uiUpdate = true;
-  }
-  int pot3 = map(FillsPot.value(), 0, 1023, 1, 32);
-  if (pot3 != numberOfFills) {
-    numberOfFills = pot3;  // Number of fills 4-16
-    // reset repeats
-    if (debug) {
-      Serial.print ("Fills: ");
-      Serial.println(numberOfFills);
+    if (pot3 != current_track) {
+      current_track = pot3;
+      uiUpdate = true;
     }
-    currentRepeat = 0;
-    clkCounter = 0;
-    generateSequence(numberOfFills, 32);
-    uiUpdate = true;
 
-  }
-  int pot1 = map(TempoPot.value(), 0, 1023, 60, 240);
-  if (pot1 != tempo) {
-    tempo = pot1;  // Tempo range is 20 to 275.
-    currentRepeat = 0;
-    clkCounter = 0;
-    if (debug) {
-      Serial.print ("Tempo: ");
-      Serial.println ( tempo);
-    }
-    uiUpdate = true;
-  }
-}
-
-/**** Euclidean rythm algos ****/
-
-uint8_t getStepNumber() {
-  return stepCounter;
-};
-uint8_t getNumberOfFills() {
-  return numberOfFills;
-};
-
-void generateSequence( uint8_t fills, uint8_t steps) {
-  numberOfSteps = steps;
-  if (fills > steps) fills = steps;
-  if (fills <= steps) {
-    for (int i = 0; i < 32; i++) euclidianPattern[i] = false;
-    if (fills != 0) {
-      euclidianPattern[0] = true;
-      float coordinate = (float)steps / (float)fills;
-      float whereFloat = 0;
-      while (whereFloat < steps) {
-        uint8_t where = (int)whereFloat;
-        if ((whereFloat - where) >= 0.5) where++;
-        euclidianPattern[where] = true;
-        whereFloat += coordinate;
-      }
+    int pot1 = map(TempoPot.value(), 5, 1014, 40, 320);
+    if (pot1 != tempo) {
+      tempo = pot1;  // Tempo range is 20 to 275.
+      uiUpdate = true;
     }
   }
-}
-
-void generateRandomSequence( uint8_t fills, uint8_t steps) {
-  //if(numberOfSteps!=steps && numberOfFills!=fills){
-  numberOfSteps = steps;
-  numberOfFills = fills;
-  if (fills > steps) fills = steps;
-  if (fills <= steps) {
-    for (int i = 0; i < 32; i++) euclidianPattern[i] = false;
-    //euclidianPattern[17]=true;
-    if (fills != 0) {
-      //  euclidianPattern[0]=true;
-      //Serial.println();
-      for (int i = 0; i < fills; i++) {
-        uint8_t where;
-        //if(euclidianPattern[where]==false) euclidianPattern[where]=true;//, Serial.print(where);
-        //else{
-        while (1) {
-          where = random(steps);
-          if (euclidianPattern[where] == false) {
-            euclidianPattern[where] = true; // if (debug) (Serial.print(where),Serial.print(" "));
-            break;
-          }
-
-        }
-        //}
-      }
-      //if (debug) Serial.println();
-    }
-  }
-  //}
-}
-
-
-void rotate(uint8_t _steps) {
-  for (int i = 0; i < _steps; i++) {
-    bool temp = euclidianPattern[numberOfSteps];
-    for (int j = numberOfSteps; j > 0; j--) {
-      euclidianPattern[j] = euclidianPattern[j - 1];
-    }
-    euclidianPattern[0] = temp;
-  }
-}
-bool getStep(uint8_t _step) {
-  return euclidianPattern[_step];
-}
-bool getCurrentStep() {
-  return euclidianPattern[stepCounter];
-}
-void doStep() {
-  if (stepCounter < (numberOfSteps - 1)) stepCounter++;
-  else stepCounter = 0;
-}
-
-void resetSequence() {
-  stepCounter = 0;
 }
