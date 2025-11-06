@@ -1,14 +1,30 @@
+#define SDA_PIN A4
+#define SCL_PIN A5
+// no reset pin needed
+#define RESET_PIN -1
+// let ss_oled find the address of our display
+#define OLED_ADDR -1
+#define FLIP180 1
+#define INVERT 0
+// Use the default Wire library
+#define USE_HW_I2C 1
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+// The pins for I2C are defined by the Wire-library.
+// On an arduino UNO:       A4(SDA), A5(SCL)
+#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
-bool uiUpdate = false;
+
 bool haveDisplay = false;
 
-void ReplaceCharactersInString(char *pcString, char cOldChar,char cNewChar){
-    while ( pcString && *pcString) {//not NULL and not zero
-        if ( *pcString == cOldChar) {//match
-            *pcString = cNewChar;//replace
-        }
-        ++pcString;//advance to next character
+void ReplaceCharactersInString(char *pcString, char cOldChar, char cNewChar) {
+  while ( pcString && *pcString) {//not NULL and not zero
+    if ( *pcString == cOldChar) {//match
+      *pcString = cNewChar;//replace
     }
+    ++pcString;//advance to next character
+  }
 }
 
 // util int to char array
@@ -23,9 +39,9 @@ void int_to_char(int num, char *result) {
     result[i] = num % 10 + '0';
     num /= 10;
   }
-
   result[len] = '\0';
 }
+
 
 // general display update
 void drumsDisplayUpdate() {
@@ -49,15 +65,38 @@ void drumsDisplayUpdate() {
 
   char reps[16];
   int_to_char(seq[current_track].repeats, reps);
-  oledWriteString(&ssoled, 0, 64, 3, (char *)"R ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 64, 3, (char *)"O ", FONT_STRETCHED, 0, 1);
   oledWriteString(&ssoled, 0, 96, 3, reps, FONT_STRETCHED, 0, 1);
 
   char text[16];
-  int_to_char(current_track+1, text);
+  int_to_char(current_track + 1, text);
   //ReplaceCharactersInString ( text, '0', '.');
   oledWriteString(&ssoled, 0, 0, 6, seq[current_track].trigger->textSequence, FONT_SMALL, 0, 1);
   oledWriteString(&ssoled, 0, 112, 6, text, FONT_STRETCHED, 0, 1);
-  
+
+
+}
+// display the load save screen
+void loadDisplayUpdate() {
+  int i, x, y;
+  oledFill(&ssoled, 0, 1);
+
+  char result[16];
+  int_to_char(display_preset + 1, result);
+  oledWriteString(&ssoled, 0, 0, 2, (char *)"Load: ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 78, 2, result, FONT_STRETCHED, 0, 1);
+
+
+}
+
+// display the load save screen
+void saveDisplayUpdate() {
+  int i, x, y;
+  oledFill(&ssoled, 0, 1);
+  char result[16];
+  int_to_char(display_slot + 1, result);
+  oledWriteString(&ssoled, 0, 0, 4, (char *)"Save: ", FONT_STRETCHED, 0, 1);
+  oledWriteString(&ssoled, 0, 78, 4, result, FONT_STRETCHED, 0, 1);
 
 }
 
@@ -65,12 +104,12 @@ void displayPattern() {
   // textSequence is the var which holds the euclidean
   //char kits[32];
   //int_to_char(text, kits);
-  oledFill(&ssoled, 0, 1);  
+  oledFill(&ssoled, 0, 1);
   ReplaceCharactersInString ( textSequence, '0', '.');
   oledWriteString(&ssoled, 0, 0, 4, textSequence, FONT_SMALL, 0, 1);
 }
 
-// general display update
+// midi synth display update
 void synthDisplayUpdate() {
   int i, x, y;
   oledFill(&ssoled, 0, 1);
@@ -78,7 +117,7 @@ void synthDisplayUpdate() {
   int offset = 0;
   char * pch;
   //printf ("Splitting string \"%s\" into tokens:\n",str);
-  pch = strtok (buffer," -");
+  pch = strtok (buffer, " -");
   while (pch != NULL)
   {
     oledWriteString(&ssoled, 0, 0, offset, (char *)pch, FONT_STRETCHED, 0, 1);

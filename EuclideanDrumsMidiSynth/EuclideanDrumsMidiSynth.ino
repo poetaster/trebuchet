@@ -22,31 +22,16 @@ using namespace std;
 #include <Wire.h>
 #include <MIDI.h>
 #include <VS1053_MIDI.h>
+#include <Bounce2.h>
+#include <EEPROM.h>
 
 // button inputs
 #define SW1 2
-#include <Bounce2.h>
 Bounce2::Button btn_one = Bounce2::Button();
 
+// oled foo
 #include <ss_oled.h>
-
 SSOLED ssoled;
-#define SDA_PIN A4
-#define SCL_PIN A5
-// no reset pin needed
-#define RESET_PIN -1
-// let ss_oled find the address of our display
-#define OLED_ADDR -1
-#define FLIP180 1
-#define INVERT 0
-// Use the default Wire library
-#define USE_HW_I2C 1
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 32 // OLED display height, in pixels
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library.
-// On an arduino UNO:       A4(SDA), A5(SCL)
-#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
 
 bool debug = true;
@@ -59,8 +44,6 @@ bool debug = true;
 #include <Encoder.h>
 Encoder myEnc(4, 3);
 
-// the pattern generator
-//euclid euc;
 
 #define NTRACKS 3
 #include "euclid.h"
@@ -106,11 +89,9 @@ uint16_t MIDI_CHANNEL_FILTER = 0b1111111111111111;
 #include "pots.h"
 // POTs to control which set of drums and tempo
 
-CS_Pot TempoPot (A0, 20);
-CS_Pot FillsPot (A2, 20);
-CS_Pot KitPot (A1, 20);
-
-
+CS_Pot TempoPot (A0, 1);
+CS_Pot FillsPot (A2, 1);
+CS_Pot KitPot (A1, 1);
 
 
 // VS1053 Shield pin definitions
@@ -140,15 +121,11 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 //MIDI_CREATE_INSTANCE(HardwareSerial, Serial, MIDI);
 
 #include "kits.h"
+int kit = 0;
 
 // buffer for GM names display
 char buffer[32];
 #include "GMnames.h"
-
-int kit = 0;
-
-
-
 
 // Globals, clean up!
 
@@ -158,7 +135,6 @@ bool timeSigMode = false;
 
 volatile byte tickCounter;               // Counts interrupt "ticks". Reset every 125
 volatile byte fourMilliCounter;          // Counter incremented every 4ms
-
 
 // Defaults, but will be overridden by POT settings if enabled
 uint16_t volume = 0;
@@ -175,18 +151,24 @@ unsigned long synctick;
 unsigned long synctick2;
 unsigned long sync;
 
+
+byte mode = 0; // 0 is drummer, 1 is settings, 2 is synth
+
+// preset saving/retrieval functions
+int internalClock   = 1;
+int selected_preset = 0;
+int selected_slot   = 0; // saving to
+bool save_now = false;
+bool load_now = false;
+int load_save_select = 0;
+int display_preset = 0;
+int display_slot = 0;
+bool setup_complete = false;
+bool uiUpdate = false;
+
 // forward declares
 #include "display.h"
-
-// time keeping global variables much from drum kid
-float nextPulseTime = 0.0; // the time, in milliseconds, of the next pulse
-float msPerPulse = 20.8333; // time for one "pulse" (there are 24 pulses per quarter note, as defined in MIDI spec)
-byte pulseNum = 0; // 0 to 23 (24ppqn, pulses per quarter note)
-unsigned int stepNum = 0; // 0 to 192 (max two bars of 8 beats, aka 192 pulses)
-unsigned int numSteps = 16; // number of steps used - dependent on time signature
-bool syncReceived = false; // has a sync/clock signal been received? (IMPROVE THIS LATER)
-
-byte mode = 0; // 0 is drummer, 1 is synth.
+#include "eeprom.h"
 
 
 void setup() {
@@ -228,12 +210,8 @@ void setup() {
   KitPot.begin();
   TempoPot.begin();
   FillsPot.begin();
-  delay(200);
+  delay(100);
 
-  // initialize from current pot positoins
-  repeats = map(KitPot.value(), 0, 1023, 0, 16);
-  numberOfFills = map(FillsPot.value(), 0, 1023, 1, 16);
-  tempo =  map(TempoPot.value(), 0, 1023, 60, 240);
   randomSeed(analogRead(0));
 
   // try set second kit.
@@ -244,13 +222,42 @@ void setup() {
 
   vsmidi.sendMIDI(0x00, 0xb0, 0x7f);
   vsmidi.sendMIDI(0x80, 0, 0);
-
+  delay(100);
+  
   /**** set up Euclidean sequences ****/
   //generateSequence(numberOfFills, 16);
+  //seq[0].trigger->generateSequence(2, 16);
+  //seq[1].trigger->generateSequence(4, 16);
+  //seq[2].trigger->generateSequence(5, 16);
+  
+  lockPots();
+   if (debug) Serial.println(selected_preset);
+  loadLastPreset();
+  if (debug) Serial.println(selected_preset);
+  
+  if (selected_preset > -1 ) {
+    if (selected_preset < 10 ) {
+      loadFromPreset(selected_preset);
+    } else {
+      selected_slot = selected_preset - 10; // we're using a simple offset to keep the screen simple
+      loadFromEEPROM(selected_slot);
+    }
+  }
+  delay(100);
 
-  seq[0].trigger->generateSequence(4, 16);
-  seq[1].trigger->generateSequence(5, 16);
-  seq[2].trigger->generateSequence(6, 16);
+  if (debug) Serial.println(kit);
+  if (debug) Serial.println(tempo);
+
+  // just in case
+  /*
+    if (setup_complete == false) {
+    selected_preset = 0;
+    loadFromPreset(selected_preset);
+    }*/
+  
+  display_preset = selected_preset;
+
+
 }
 
 int oldKit;
@@ -278,10 +285,14 @@ void loop() {
   } else {
     delta = 0;
   }
-  //if (debug) Serial.println(newPos);
+
 
   if (mode == 0) {
+    // first audio/midi processing
     drummerLoop();
+
+    // now io/ui
+    // switch between fills and offset
 
     if (encoder_select == false) {
       int fills = seq[current_track].fills;
@@ -307,10 +318,73 @@ void loop() {
         uiUpdate = true;
       }
     }
-  } else {
+
+    // load save screen
+  } else if (mode == 1) {
+
+    // display load save;
+
+    // lock pots
+    lockPots();
+
+    // keep drum loop running
+    drummerLoop();
+
+    // encoder moved
+    if (delta != 0) {
+      int old_preset = selected_preset; // store it just in case we need it
+      int preset = constrain( (display_preset + delta), 0, 19);
+
+      // load methods takes care of setting mode back to 0 for drums
+      // they also update the selected_preset & selected_slot vars
+      display_preset = preset;
+      loadDisplayUpdate();
+
+    }
+    //  button pushed and we have a new preset
+    if ( save_now && display_preset != selected_preset) {
+
+      if (display_preset < 10 ) {
+        selected_preset = display_preset;
+        loadFromPreset(selected_preset);
+      } else {
+        selected_slot = display_preset - 10; // we're using a simple offset to keep the screen simple
+        selected_preset = display_preset;
+        loadFromEEPROM(selected_slot);
+      }
+      tempo = currentConfig.tempo;
+      kit = currentConfig.kit;
+      saveCurrentPreset(selected_preset);
+      save_now = false;
+      mode = 0;
+      if (debug) Serial.println(currentConfig.kit);
+      if (debug) Serial.println(currentConfig.tempo);
+      if (tempo != currentConfig.tempo) tempo = currentConfig.tempo;
+      if (kit != currentConfig.kit) kit = currentConfig.kit;
+    }
+
+
+  } else if (mode == 2) {
+    lockPots();
+
+    if (delta != 0  ) {
+      int slot = constrain( (selected_slot + delta), 0, 9);
+      display_slot = slot;
+      saveDisplayUpdate();
+    }
+    if (save_now && display_slot !=  selected_slot) {
+      saveToEEPROM(display_slot);
+      selected_slot = display_slot;
+      saveCurrentPreset(selected_slot);
+      save_now = false;
+      mode = 0;
+    }
+
+  } // midi synth screen
+  else if (mode == 3) {
 
     synthLoop() ;
-    long newPos = myEnc.read() / 4;
+
     if ( newPos != instrument && newPos > -1 && newPos < 101) {
       instrument = newPos;
       vsmidi.sendMIDI(0xC0 | 0, instrument, 0);
@@ -345,9 +419,10 @@ void drummerLoop() {
 
         // we're addding a bit of randomness to velocity
         int vel = 127 - random(55);
-        if (note == 75 || note == 57 || note == 67 || note == 31) {
+        if (note == 75 || note == 57 || note == 67 || note == 31 || note == 63 || note == 37) {
           vel = vel - 30 ;
         }
+        if (note == 35 || note == 36 ) vel = vel - 15; // bass drum
         vsmidi.noteOn( 9, note, vel); // channel 9 is 10 in midi.
       } else {
 
@@ -359,13 +434,15 @@ void drummerLoop() {
   }
 
   // Check controls every 1/10 second adc readings.
-  if (fourMilliCounter > 5) {
+  if (fourMilliCounter > 5 && mode == 0) {
     fourMilliCounter = 0;
     adc();
   }
 
   if (uiUpdate) {
-    drumsDisplayUpdate();
+    if ( mode == 0 ) {
+      drumsDisplayUpdate();
+    }
     uiUpdate = false;
   }
 
@@ -413,9 +490,20 @@ void read_buttons() {
 
   if (btn_one.rose()) {
     int btnOneLastTime = btn_one.previousDuration();
-    if (btnOneLastTime > 500) {
-      mode = !mode;
-      if (mode == 1) {
+    // trigger / load / save
+
+    if (btnOneLastTime < 500 && ( mode == 1 || mode == 2) ) {
+      save_now = true;
+    }
+
+    // trigger mode change
+    if (btnOneLastTime > 1000) {
+
+      mode = mode + 1;
+      if (mode > 3) mode = 0;
+
+      if (mode == 3) {
+        // enter midi input mode
         vsmidi.allNotesOff();
         // start input
         MIDI.begin(MIDI_CHANNEL_OMNI);
@@ -426,42 +514,68 @@ void read_buttons() {
         buffer[sizeof(buffer) - 1] = '\0';
         synthDisplayUpdate();
 
-      } else {
+      } else if (mode == 2) {
+        // enter load/save screen
+        lockPots();
+        saveDisplayUpdate();
+
+
+      } else if ( mode == 1) {
+        lockPots();
+        loadDisplayUpdate();
+
+      }
+      else if (mode == 0) {
+        // enter drummer mode
         //MIDI.stop();
         vsmidi.allNotesOff();
-        uiUpdate = true;
+        //uiUpdate = true;
       }
     }
   }
 
   // if button one was held for more than 75 millis
   //int debouncedState =  btn_one.read();
-  if (btn_one.released() && btn_one.currentDuration() < 500) {
-    encoder_select = !encoder_select;
+  // toggle encoder function per screen
+  if (btn_one.released() && btn_one.currentDuration() < 200) {
+
+    if (mode == 0) {
+      encoder_select = !encoder_select; // drum interface toggle between fills and offset
+    } else if (mode == 1 && mode == 2) {
+      save_now = true;
+    }
   }
+
+
 }
 
 // read pots
 void adc() {
-  if (read_lock == false) {
+  int pot0 = map(TempoPot.value(), 5, 1014, 40, 320);
+  int pot1 = map(KitPot.value(), 5, 1014, 0, 8);
+  int pot2 = map(FillsPot.value(), 5, 1014, 0, 2);
 
-    int pot0 = map(KitPot.value(), 5, 1014, 0, 8);
-    int pot3 = map(FillsPot.value(), 5, 1014, 0, 2);
 
-    // must ensure pots return to last value
-    if (pot0 != kit) {
-      kit = pot0;
-      uiUpdate = true;
-    }
-    if (pot3 != current_track) {
-      current_track = pot3;
-      uiUpdate = true;
-    }
-
-    int pot1 = map(TempoPot.value(), 5, 1014, 40, 320);
-    if (pot1 != tempo) {
-      tempo = pot1;  // Tempo range is 20 to 275.
-      uiUpdate = true;
-    }
+  // must ensure pots return to saved values
+  if ( potlock[0] == 1 && pot0 == tempo ) {
+    if (debug) Serial.println("unlocked tempo pot");
+    
+    unlockPot[0];
+    
+  } else if (potlock[0] == 0 && pot0 != tempo)  {
+    tempo = pot0;  // Tempo range is 20 to 275.
+    uiUpdate = true;
   }
+  if ( potlock[1] && pot1 == kit ) {
+    unlockPot[1];
+  } else if (potlock[1] == 0 && pot1 != kit) {
+    kit = pot1;
+    uiUpdate = true;
+  }
+
+  if ( pot2 != current_track ) {
+    current_track = pot2;
+    uiUpdate = true;
+  }
+
 }

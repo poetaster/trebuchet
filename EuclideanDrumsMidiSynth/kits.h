@@ -21,7 +21,7 @@ int kits[KIT][9] = {
   { 35, 36, 35, 38, 40, 63, 46, 70, 42 }, // little more on the snare side/ HH, lo & hi conga, and maracas
   { 35, 36, 64, 38, 40, 38, 28, 37, 63,}, // little more on the snare side/ HH, lo conga, one clave hit
   { 35, 36, 46, 38, 42, 38, 27, 44, 64 }, // clicks snare side stick maracas
-  { 35, 36, 62, 38, 46, 38, 54, 42, 67 }, // clicks, hh, castenets
+  { 35, 64, 64, 38, 39, 39, 46, 42, 62 }, // clicks, hh, castenets
   { 35, 64, 35, 38, 62, 31, 42, 37, 33 },
   { 35, 36, 62, 38, 40, 38, 82, 69, 31 },
 }; // Bass, Snare, HHO, HHCs

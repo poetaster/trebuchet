@@ -1,3 +1,17 @@
+#define NPOTS 3
+// Pot utility functions
+byte potlock[NPOTS]; 
+
+// when pots are locked it means they must change to stored value to register
+void lockPots(void) {
+  for (int i = 0; i < NPOTS; ++i) potlock[i] = 1;
+}
+void unlockPot(int index) {
+  potlock[index] = 0;
+}
+
+// Pot classes from dual lfo sketch
+
 ///////////////////////////////////////////////////////////////
 //
 //  CS_Pot.h
@@ -32,7 +46,7 @@
 
 #include "Arduino.h"
 
-#define MAXSMOOTH 3
+#define MAXSMOOTH 4
 
 // CLASS
 class CS_Pot
