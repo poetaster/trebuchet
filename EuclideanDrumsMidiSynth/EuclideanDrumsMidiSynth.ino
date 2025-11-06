@@ -89,9 +89,9 @@ uint16_t MIDI_CHANNEL_FILTER = 0b1111111111111111;
 #include "pots.h"
 // POTs to control which set of drums and tempo
 
-CS_Pot TempoPot (A0, 1);
-CS_Pot FillsPot (A2, 1);
-CS_Pot KitPot (A1, 1);
+CS_Pot TempoPot (A0, 0);
+CS_Pot FillsPot (A2, 0);
+CS_Pot KitPot (A1, 0);
 
 
 // VS1053 Shield pin definitions
@@ -153,6 +153,8 @@ unsigned long sync;
 
 
 byte mode = 0; // 0 is drummer, 1 is settings, 2 is synth
+// we need more granualar deltas
+int oldKitPot = 0; // used to compare movement of kit pot when locked.
 
 // preset saving/retrieval functions
 int internalClock   = 1;
@@ -212,6 +214,7 @@ void setup() {
   FillsPot.begin();
   delay(100);
 
+  oldKitPot = KitPot.value();
   randomSeed(analogRead(0));
 
   // try set second kit.
@@ -223,18 +226,18 @@ void setup() {
   vsmidi.sendMIDI(0x00, 0xb0, 0x7f);
   vsmidi.sendMIDI(0x80, 0, 0);
   delay(100);
-  
+
   /**** set up Euclidean sequences ****/
   //generateSequence(numberOfFills, 16);
   //seq[0].trigger->generateSequence(2, 16);
   //seq[1].trigger->generateSequence(4, 16);
   //seq[2].trigger->generateSequence(5, 16);
-  
+
   lockPots();
-   if (debug) Serial.println(selected_preset);
+  if (debug) Serial.println(selected_preset);
   loadLastPreset();
   if (debug) Serial.println(selected_preset);
-  
+
   if (selected_preset > -1 ) {
     if (selected_preset < 10 ) {
       loadFromPreset(selected_preset);
@@ -254,7 +257,7 @@ void setup() {
     selected_preset = 0;
     loadFromPreset(selected_preset);
     }*/
-  
+
   display_preset = selected_preset;
 
 
@@ -549,26 +552,32 @@ void read_buttons() {
 
 }
 
+
+
 // read pots
 void adc() {
   int pot0 = map(TempoPot.value(), 5, 1014, 40, 320);
   int pot1 = map(KitPot.value(), 5, 1014, 0, 8);
   int pot2 = map(FillsPot.value(), 5, 1014, 0, 2);
 
+  // we use a delta from saved value to keep the pot reading in range of setting.
 
+  int tempoDelta = tempo - pot0;
+  int kitDelta = kit - pot1;
+  
+  
   // must ensure pots return to saved values
-  if ( potlock[0] == 1 && pot0 == tempo ) {
-    if (debug) Serial.println("unlocked tempo pot");
-    
-    unlockPot[0];
-    
-  } else if (potlock[0] == 0 && pot0 != tempo)  {
+  if ( potlock[0] == 1 &&  ( abs(tempoDelta) < 5 ) ) {
+    potlock[0] = 0;
+  } else if (pot0 != tempo && potlock[0] == 0)  {
     tempo = pot0;  // Tempo range is 20 to 275.
     uiUpdate = true;
   }
-  if ( potlock[1] && pot1 == kit ) {
-    unlockPot[1];
-  } else if (potlock[1] == 0 && pot1 != kit) {
+
+  if ( potlock[1] && (abs(kitDelta) == 0 ) ) {
+    potlock[1] = 0;
+    oldKitPot = KitPot.value();
+  } else if (pot1 != kit && potlock[1] == 0) {
     kit = pot1;
     uiUpdate = true;
   }
